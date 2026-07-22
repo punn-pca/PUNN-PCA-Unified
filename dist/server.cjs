@@ -1,0 +1,1231 @@
+var __create = Object.create;
+var __defProp = Object.defineProperty;
+var __getOwnPropDesc = Object.getOwnPropertyDescriptor;
+var __getOwnPropNames = Object.getOwnPropertyNames;
+var __getProtoOf = Object.getPrototypeOf;
+var __hasOwnProp = Object.prototype.hasOwnProperty;
+var __copyProps = (to, from, except, desc) => {
+  if (from && typeof from === "object" || typeof from === "function") {
+    for (let key of __getOwnPropNames(from))
+      if (!__hasOwnProp.call(to, key) && key !== except)
+        __defProp(to, key, { get: () => from[key], enumerable: !(desc = __getOwnPropDesc(from, key)) || desc.enumerable });
+  }
+  return to;
+};
+var __toESM = (mod, isNodeMode, target) => (target = mod != null ? __create(__getProtoOf(mod)) : {}, __copyProps(
+  // If the importer is in node compatibility mode or this is not an ESM
+  // file that has been converted to a CommonJS file using a Babel-
+  // compatible transform (i.e. "__esModule" has not been set), then set
+  // "default" to the CommonJS "module.exports" for node compatibility.
+  isNodeMode || !mod || !mod.__esModule ? __defProp(target, "default", { value: mod, enumerable: true }) : target,
+  mod
+));
+
+// server.ts
+var import_express = __toESM(require("express"), 1);
+var import_path2 = __toESM(require("path"), 1);
+var import_vite = require("vite");
+
+// src/backend/orchestrator.ts
+var import_genai = require("@google/genai");
+
+// src/backend/cognitive_dna.ts
+var COGNITIVE_DNA = [
+  "observation" /* OBSERVATION */,
+  "understanding" /* UNDERSTANDING */,
+  "purpose" /* PURPOSE */,
+  "memory" /* MEMORY */,
+  "mental_model" /* MENTAL_MODEL */,
+  "hypothesis" /* HYPOTHESIS */,
+  "evidence_evaluation" /* EVIDENCE_EVALUATION */,
+  "critique" /* CRITIQUE */,
+  "decision" /* DECISION */,
+  "communication" /* COMMUNICATION */,
+  "reflection" /* REFLECTION */,
+  "learning" /* LEARNING */
+];
+
+// src/backend/state.ts
+var CognitiveState = class {
+  user_input;
+  language = "en";
+  purpose = "";
+  response = "";
+  notes = [];
+  observations = [];
+  understanding = "";
+  constraints = [];
+  memories = [];
+  mental_models = [];
+  hypotheses = [];
+  decision = "";
+  confidence = 0;
+  uncertainty = [];
+  critique = [];
+  reflection = [];
+  learning = [];
+  agency_checks = [];
+  trace = [];
+  // PCA Cognitive Orchestration Layer Data Structures
+  reasoning_graph;
+  strategy_selection;
+  memory_traces;
+  constructor(userInput) {
+    this.user_input = userInput;
+  }
+  record(stage, output) {
+    this.trace.append?.({
+      stage,
+      timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+      output
+    }) || this.trace.push({
+      stage,
+      timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+      output
+    });
+  }
+};
+
+// src/backend/governance.ts
+var COERCIVE_PHRASES = [
+  "you must",
+  "you have to",
+  "you need to",
+  "the only option",
+  "there is no other way"
+];
+var UNSUPPORTED_CONFIDENCE_THRESHOLD = 0.6;
+var Firekeeper = class {
+  review(state) {
+    state.agency_checks.push("Human decision authority is retained; this is a recommendation.");
+    state.agency_checks.push("Alternatives and remaining uncertainty are communicated.");
+    if (state.uncertainty.length === 0) {
+      state.uncertainty.push("No external evidence has been independently verified.");
+    }
+    if (state.hypotheses.length === 0) {
+      state.critique.push("No alternatives were generated; do not treat this as a final decision.");
+    }
+    const decisionText = state.decision.toLowerCase();
+    const hasCoercive = COERCIVE_PHRASES.some((phrase) => decisionText.includes(phrase));
+    if (hasCoercive) {
+      state.critique.push(
+        "Decision language asserts the choice rather than framing it as a recommendation; human agency may be undermined."
+      );
+      state.agency_checks.push("Coercive phrasing detected in decision text; flagged for review.");
+    }
+    if (state.confidence > UNSUPPORTED_CONFIDENCE_THRESHOLD && state.memories.length === 0) {
+      const percentage = Math.round(state.confidence * 100);
+      state.critique.push(
+        `Confidence (${percentage}%) exceeds what unsupported evidence justifies; no corroborating memory was retrieved.`
+      );
+      state.agency_checks.push("Confidence claim exceeds supporting evidence; flagged for review.");
+    }
+  }
+};
+
+// src/backend/memory.ts
+var fs = __toESM(require("fs"), 1);
+var path = __toESM(require("path"), 1);
+var MEMORY_FILE_PATH = path.join(process.cwd(), "memory_store.json");
+var MemoryEngine = class {
+  _items = [];
+  constructor() {
+    this.loadMemory();
+  }
+  loadMemory() {
+    try {
+      if (fs.existsSync(MEMORY_FILE_PATH)) {
+        const data = fs.readFileSync(MEMORY_FILE_PATH, "utf-8");
+        const parsed = JSON.parse(data);
+        if (Array.isArray(parsed)) {
+          this._items = parsed.map((item, idx) => ({
+            ...item,
+            id: item.id || `Memory #${idx + 1}`,
+            confidenceHistory: item.confidenceHistory || [item.confidence || 0.72],
+            createdByStage: item.createdByStage || "LEARNING",
+            usedInConversations: item.usedInConversations || []
+          }));
+          console.log(`[MemoryEngine] Loaded ${this._items.length} memory items from disk.`);
+        }
+      }
+    } catch (error) {
+      console.error("[MemoryEngine] Failed to load memory from disk:", error);
+    }
+  }
+  saveMemory() {
+    try {
+      fs.writeFileSync(MEMORY_FILE_PATH, JSON.stringify(this._items, null, 2), "utf-8");
+    } catch (error) {
+      console.error("[MemoryEngine] Failed to save memory to disk:", error);
+    }
+  }
+  remember(item) {
+    const nextNum = this._items.length + 1;
+    const initialConf = item.confidence ?? 0.72;
+    const fullItem = {
+      id: item.id || `Memory #${nextNum}`,
+      content: item.content,
+      layer: item.layer,
+      source: item.source,
+      confidence: initialConf,
+      confidenceHistory: item.confidenceHistory || [initialConf],
+      createdByStage: item.createdByStage || "LEARNING",
+      usedInConversations: item.usedInConversations || [],
+      context: item.context ?? {},
+      created_at: item.created_at ?? (/* @__PURE__ */ new Date()).toISOString()
+    };
+    this._items.push(fullItem);
+    this.saveMemory();
+    return fullItem;
+  }
+  recordUsage(memoryId, conversationTag, newConfidence) {
+    const item = this._items.find((m) => m.id === memoryId || m.content === memoryId);
+    if (item) {
+      if (!item.usedInConversations) item.usedInConversations = [];
+      if (!item.usedInConversations.includes(conversationTag)) {
+        item.usedInConversations.push(conversationTag);
+      }
+      if (newConfidence !== void 0) {
+        if (!item.confidenceHistory) item.confidenceHistory = [item.confidence];
+        item.confidenceHistory.push(newConfidence);
+        item.confidence = newConfidence;
+      }
+      this.saveMemory();
+    }
+  }
+  getAllItems() {
+    return this._items;
+  }
+  deleteItem(content) {
+    const initialLen = this._items.length;
+    this._items = this._items.filter((item) => item.content !== content);
+    if (this._items.length !== initialLen) {
+      this.saveMemory();
+      return true;
+    }
+    return false;
+  }
+  clearMemory() {
+    this._items = [];
+    this.saveMemory();
+  }
+  retrieve(query, limit = 5) {
+    const queryLower = query.trim().toLowerCase();
+    if (!queryLower) {
+      return [];
+    }
+    const termRegex = /[a-zA-Z0-9'\u0E00-\u0E7F]+/g;
+    const queryTerms = /* @__PURE__ */ new Set();
+    let match;
+    while ((match = termRegex.exec(queryLower)) !== null) {
+      queryTerms.add(match[0]);
+    }
+    const ranked = [];
+    for (const item of this._items) {
+      const itemLower = item.content.toLowerCase();
+      let score = 0;
+      if (queryTerms.size > 0) {
+        const itemTerms = /* @__PURE__ */ new Set();
+        termRegex.lastIndex = 0;
+        while ((match = termRegex.exec(itemLower)) !== null) {
+          itemTerms.add(match[0]);
+        }
+        let intersectionSize = 0;
+        for (const t of queryTerms) {
+          if (itemTerms.has(t) || itemLower.includes(t)) {
+            intersectionSize++;
+          }
+        }
+        score += intersectionSize * item.confidence;
+      }
+      if (itemLower.includes(queryLower)) {
+        score += 2 * item.confidence;
+      }
+      if (score > 0) {
+        ranked.push({ score, item });
+      }
+    }
+    ranked.sort((a, b) => {
+      if (Math.abs(b.score - a.score) > 0.01) {
+        return b.score - a.score;
+      }
+      return new Date(b.item.created_at).getTime() - new Date(a.item.created_at).getTime();
+    });
+    return ranked.slice(0, limit).map((entry) => entry.item);
+  }
+};
+
+// src/backend/purpose.ts
+var DEFAULT_CONSTRAINTS = [
+  "Do not replace human judgment.",
+  "State uncertainty explicitly.",
+  "Prefer evidence over assumption."
+];
+var PurposeEngine = class {
+  process(state) {
+    const request = state.user_input.trim();
+    const isPhilosophy = /จริยธรรม|คุณธรรม|ผิดถูก|ดีชั่ว|ethics|moral|philosophy|ปรัชญา|ความจริง|สัจจะ|ความรู้|epistemology|truth/i.test(request);
+    const isAI = /ai|ปัญญาประดิษฐ์|alignment|safety|control|agi|model|llm/i.test(request);
+    const isVerification = /code|program|verify|correctness|พิสูจน์|ตรรกะ|formal|logic/i.test(request);
+    const isDecision = /ตัดสินใจ|เลือก|ดีไหม|ทางเลือก|decision|choice|select/i.test(request);
+    const isComparison = /เปรียบเทียบ|เทียบ|ข้อดีข้อเสีย|vs|difference|ดีกว่า/i.test(request);
+    if (state.language === "th") {
+      if (!request) {
+        state.purpose = "\u0E02\u0E2D\u0E43\u0E2B\u0E49\u0E1C\u0E39\u0E49\u0E43\u0E0A\u0E49\u0E23\u0E30\u0E1A\u0E38\u0E04\u0E33\u0E16\u0E32\u0E21\u0E01\u0E48\u0E2D\u0E19\u0E17\u0E35\u0E48\u0E08\u0E30\u0E2A\u0E23\u0E49\u0E32\u0E07\u0E04\u0E33\u0E15\u0E2D\u0E1A";
+      } else if (isComparison) {
+        state.purpose = `\u0E40\u0E1B\u0E23\u0E35\u0E22\u0E1A\u0E40\u0E17\u0E35\u0E22\u0E1A\u0E42\u0E04\u0E23\u0E07\u0E2A\u0E23\u0E49\u0E32\u0E07\u0E41\u0E25\u0E30\u0E02\u0E49\u0E2D\u0E41\u0E15\u0E01\u0E15\u0E48\u0E32\u0E07\u0E2D\u0E22\u0E48\u0E32\u0E07\u0E40\u0E1B\u0E47\u0E19\u0E01\u0E25\u0E32\u0E07\u0E40\u0E1E\u0E37\u0E48\u0E2D\u0E43\u0E2B\u0E49\u0E40\u0E2B\u0E47\u0E19\u0E41\u0E07\u0E48\u0E21\u0E38\u0E21\u0E23\u0E2D\u0E1A\u0E14\u0E49\u0E32\u0E19\u0E40\u0E01\u0E35\u0E48\u0E22\u0E27\u0E01\u0E31\u0E1A: ${request}`;
+      } else if (isPhilosophy || isAI) {
+        state.purpose = `\u0E2D\u0E18\u0E34\u0E1A\u0E32\u0E22\u0E2B\u0E25\u0E31\u0E01\u0E01\u0E32\u0E23 \u0E17\u0E24\u0E29\u0E0E\u0E35 \u0E2B\u0E23\u0E37\u0E2D\u0E41\u0E19\u0E27\u0E04\u0E34\u0E14\u0E40\u0E0A\u0E34\u0E07\u0E25\u0E36\u0E01\u0E40\u0E1E\u0E37\u0E48\u0E2D\u0E43\u0E2B\u0E49\u0E1C\u0E39\u0E49\u0E43\u0E0A\u0E49\u0E40\u0E02\u0E49\u0E32\u0E43\u0E08\u0E41\u0E01\u0E48\u0E19\u0E41\u0E17\u0E49\u0E2D\u0E22\u0E48\u0E32\u0E07\u0E16\u0E48\u0E2D\u0E07\u0E41\u0E17\u0E49\u0E40\u0E01\u0E35\u0E48\u0E22\u0E27\u0E01\u0E31\u0E1A: ${request}`;
+      } else if (isVerification) {
+        state.purpose = `\u0E41\u0E22\u0E01\u0E41\u0E22\u0E30\u0E2D\u0E07\u0E04\u0E4C\u0E1B\u0E23\u0E30\u0E01\u0E2D\u0E1A \u0E1B\u0E23\u0E30\u0E40\u0E21\u0E34\u0E19\u0E02\u0E49\u0E2D\u0E40\u0E17\u0E47\u0E08\u0E08\u0E23\u0E34\u0E07 \u0E41\u0E25\u0E30\u0E04\u0E27\u0E32\u0E21\u0E2A\u0E21\u0E40\u0E2B\u0E15\u0E38\u0E2A\u0E21\u0E1C\u0E25\u0E40\u0E1E\u0E37\u0E48\u0E2D\u0E23\u0E31\u0E1A\u0E1B\u0E23\u0E30\u0E01\u0E31\u0E19\u0E04\u0E27\u0E32\u0E21\u0E19\u0E48\u0E32\u0E40\u0E0A\u0E37\u0E48\u0E2D\u0E16\u0E37\u0E2D\u0E40\u0E0A\u0E34\u0E07\u0E23\u0E30\u0E1A\u0E1A\u0E40\u0E01\u0E35\u0E48\u0E22\u0E27\u0E01\u0E31\u0E1A: ${request}`;
+      } else if (isDecision) {
+        state.purpose = `\u0E0A\u0E48\u0E27\u0E22\u0E08\u0E31\u0E14\u0E40\u0E23\u0E35\u0E22\u0E07\u0E2B\u0E25\u0E31\u0E01\u0E04\u0E34\u0E14 \u0E16\u0E48\u0E27\u0E07\u0E19\u0E49\u0E33\u0E2B\u0E19\u0E31\u0E01\u0E1C\u0E25\u0E01\u0E23\u0E30\u0E17\u0E1A \u0E41\u0E25\u0E30\u0E2A\u0E19\u0E31\u0E1A\u0E2A\u0E19\u0E38\u0E19\u0E01\u0E32\u0E23\u0E15\u0E31\u0E14\u0E2A\u0E34\u0E19\u0E43\u0E08\u0E14\u0E49\u0E27\u0E22\u0E15\u0E31\u0E27\u0E04\u0E38\u0E13\u0E40\u0E2D\u0E07\u0E40\u0E01\u0E35\u0E48\u0E22\u0E27\u0E01\u0E31\u0E1A: ${request}`;
+      } else {
+        state.purpose = `\u0E0A\u0E48\u0E27\u0E22\u0E27\u0E34\u0E40\u0E04\u0E23\u0E32\u0E30\u0E2B\u0E4C \u0E15\u0E23\u0E27\u0E08\u0E2A\u0E2D\u0E1A\u0E02\u0E49\u0E2D\u0E21\u0E39\u0E25 \u0E41\u0E25\u0E30\u0E40\u0E2A\u0E19\u0E2D\u0E17\u0E32\u0E07\u0E40\u0E25\u0E37\u0E2D\u0E01\u0E43\u0E2B\u0E49\u0E04\u0E38\u0E13\u0E15\u0E31\u0E14\u0E2A\u0E34\u0E19\u0E43\u0E08\u0E44\u0E14\u0E49\u0E2D\u0E22\u0E48\u0E32\u0E07\u0E23\u0E2D\u0E1A\u0E04\u0E2D\u0E1A\u0E40\u0E01\u0E35\u0E48\u0E22\u0E27\u0E01\u0E31\u0E1A: ${request}`;
+      }
+    } else {
+      if (!request) {
+        state.purpose = "Ask the user for a question before generating a response.";
+      } else if (isComparison) {
+        state.purpose = `Objectively compare structures and trade-offs to show multi-dimensional aspects of: ${request}`;
+      } else if (isPhilosophy || isAI) {
+        state.purpose = `Explain principles, theories, or deep concepts to foster profound understanding of: ${request}`;
+      } else if (isVerification) {
+        state.purpose = `Analyze components, evaluate facts, and verify correctness to ensure systemic reliability of: ${request}`;
+      } else if (isDecision) {
+        state.purpose = `Organize thoughts, weigh impacts, and support autonomous, human-owned decisions about: ${request}`;
+      } else {
+        state.purpose = `Analyze, verify data, and present alternatives for your careful decisions about: ${request}`;
+      }
+    }
+    state.constraints = [...DEFAULT_CONSTRAINTS];
+    return state;
+  }
+};
+
+// src/backend/config.ts
+var import_fs = __toESM(require("fs"), 1);
+var import_path = __toESM(require("path"), 1);
+var import_yaml = __toESM(require("yaml"), 1);
+var VERSION = "0.2.0";
+var DEFAULT_CONFIG = {
+  llm: {
+    provider: "gemini",
+    model: "gemini-3.5-flash",
+    temperature: 0.7,
+    max_tokens: 500
+  },
+  memory: {
+    vector_search: false,
+    embedding_model: "all-MiniLM-L6-v2"
+  },
+  governance: {
+    firekeeper_mode: "strict",
+    human_agency_required: true
+  }
+};
+function loadConfig() {
+  const configPath = import_path.default.resolve(process.cwd(), "config.yaml");
+  if (!import_fs.default.existsSync(configPath)) {
+    return DEFAULT_CONFIG;
+  }
+  try {
+    const fileContent = import_fs.default.readFileSync(configPath, "utf8");
+    const parsed = import_yaml.default.parse(fileContent) || {};
+    const config = { ...DEFAULT_CONFIG };
+    if (parsed.llm) {
+      config.llm = {
+        ...DEFAULT_CONFIG.llm,
+        ...parsed.llm
+      };
+    }
+    if (parsed.memory) {
+      config.memory = {
+        ...DEFAULT_CONFIG.memory,
+        ...parsed.memory
+      };
+    }
+    if (parsed.governance) {
+      config.governance = {
+        ...DEFAULT_CONFIG.governance,
+        ...parsed.governance
+      };
+    }
+    return config;
+  } catch (error) {
+    console.warn(`Warning: Failed to load config.yaml (${error}). Using defaults.`);
+    return DEFAULT_CONFIG;
+  }
+}
+var settings = loadConfig();
+
+// src/backend/orchestrator.ts
+var THAI_SCRIPT_REGEX = /[\u0E00-\u0E7F]/;
+function detectLanguage(text) {
+  return THAI_SCRIPT_REGEX.test(text) ? "th" : "en";
+}
+var geminiClient = null;
+function getGeminiClient() {
+  if (!geminiClient) {
+    const apiKey = process.env.GEMINI_API_KEY;
+    if (!apiKey) {
+      throw new Error("GEMINI_API_KEY environment variable is required for Gemini communication.");
+    }
+    geminiClient = new import_genai.GoogleGenAI({
+      apiKey,
+      httpOptions: {
+        headers: {
+          "User-Agent": "aistudio-build"
+        }
+      }
+    });
+  }
+  return geminiClient;
+}
+var Orchestrator = class {
+  memory;
+  purposeEngine;
+  firekeeper;
+  useLLM;
+  provider;
+  model;
+  temperature;
+  tone;
+  deepReasoning;
+  constructor(options) {
+    this.memory = options?.memory ?? new MemoryEngine();
+    this.purposeEngine = new PurposeEngine();
+    this.firekeeper = new Firekeeper();
+    this.provider = options?.provider ?? settings.llm.provider;
+    this.model = options?.model ?? settings.llm.model;
+    this.temperature = options?.temperature ?? settings.llm.temperature;
+    this.useLLM = options?.useLLM !== false;
+    this.tone = options?.tone ?? "Formal Architect";
+    this.deepReasoning = !!options?.deepReasoning;
+  }
+  async think(userInput) {
+    const state = new CognitiveState(userInput);
+    this._observe(state);
+    this._understand(state);
+    this._identify_purpose(state);
+    this._retrieve_memory(state);
+    this._build_mental_model(state);
+    this._generate_hypotheses(state);
+    this._evaluate_evidence(state);
+    this._critique(state);
+    this.firekeeper.review(state);
+    this._decide(state);
+    await this._communicate(state);
+    this._reflect(state);
+    this._learn(state);
+    this._validate_trace(state);
+    return state;
+  }
+  _observe(state) {
+    const observation = state.user_input.trim();
+    if (observation) {
+      state.observations.push(observation);
+      state.language = detectLanguage(observation);
+    } else {
+      state.uncertainty.push("No request was provided.");
+    }
+    state.record("observation" /* OBSERVATION */, {
+      observations: state.observations,
+      uncertainty: [...state.uncertainty]
+    });
+  }
+  _understand(state) {
+    const userInput = state.user_input.trim();
+    let intentTH = "";
+    let intentEN = "";
+    if (userInput.length === 0) {
+      intentTH = "\u0E02\u0E49\u0E2D\u0E21\u0E39\u0E25\u0E17\u0E35\u0E48\u0E43\u0E2B\u0E49\u0E21\u0E32\u0E44\u0E21\u0E48\u0E40\u0E1E\u0E35\u0E22\u0E07\u0E1E\u0E2D\u0E15\u0E48\u0E2D\u0E01\u0E32\u0E23\u0E17\u0E33\u0E04\u0E27\u0E32\u0E21\u0E40\u0E02\u0E49\u0E32\u0E43\u0E08\u0E1A\u0E23\u0E34\u0E1A\u0E17\u0E04\u0E23\u0E31\u0E1A";
+      intentEN = "There is insufficient input to establish context.";
+    } else {
+      const isPhilosophy = /จริยธรรม|คุณธรรม|ผิดถูก|ดีชั่ว|ethics|moral|philosophy|ปรัชญา|ความจริง|สัจจะ|ความรู้|epistemology|truth/i.test(userInput);
+      const isAI = /ai|ปัญญาประดิษฐ์|alignment|safety|control|agi|model|llm/i.test(userInput);
+      const isVerification = /code|program|verify|correctness|พิสูจน์|ตรรกะ|formal|logic/i.test(userInput);
+      const isDecision = /ตัดสินใจ|เลือก|ดีไหม|ทางเลือก|decision|choice|select/i.test(userInput);
+      const isComparison = /เปรียบเทียบ|เทียบ|ข้อดีข้อเสีย|vs|difference|ดีกว่า/i.test(userInput);
+      if (isPhilosophy) {
+        intentTH = "\u0E1C\u0E39\u0E49\u0E43\u0E0A\u0E49\u0E15\u0E49\u0E2D\u0E07\u0E01\u0E32\u0E23\u0E16\u0E01\u0E1B\u0E23\u0E30\u0E40\u0E14\u0E47\u0E19\u0E2B\u0E23\u0E37\u0E2D\u0E04\u0E34\u0E14\u0E40\u0E23\u0E37\u0E48\u0E2D\u0E07\u0E1B\u0E23\u0E31\u0E0A\u0E0D\u0E32 \u0E08\u0E23\u0E34\u0E22\u0E18\u0E23\u0E23\u0E21 \u0E2B\u0E23\u0E37\u0E2D\u0E17\u0E24\u0E29\u0E0E\u0E35\u0E04\u0E27\u0E32\u0E21\u0E23\u0E39\u0E49 \u0E2D\u0E22\u0E32\u0E01\u0E17\u0E33\u0E04\u0E27\u0E32\u0E21\u0E40\u0E02\u0E49\u0E32\u0E43\u0E08\u0E1B\u0E23\u0E30\u0E40\u0E14\u0E47\u0E19\u0E40\u0E2B\u0E25\u0E48\u0E32\u0E19\u0E35\u0E49\u0E43\u0E2B\u0E49\u0E25\u0E36\u0E01\u0E0B\u0E36\u0E49\u0E07\u0E41\u0E25\u0E30\u0E0A\u0E31\u0E14\u0E40\u0E08\u0E19\u0E02\u0E36\u0E49\u0E19\u0E04\u0E23\u0E31\u0E1A";
+        intentEN = "The user seeks philosophical exploration, ethical framework analysis, or epistemological clarity.";
+      } else if (isAI) {
+        intentTH = "\u0E1C\u0E39\u0E49\u0E43\u0E0A\u0E49\u0E01\u0E33\u0E25\u0E31\u0E07\u0E44\u0E15\u0E23\u0E48\u0E15\u0E23\u0E2D\u0E07\u0E40\u0E23\u0E37\u0E48\u0E2D\u0E07\u0E04\u0E27\u0E32\u0E21\u0E1B\u0E25\u0E2D\u0E14\u0E20\u0E31\u0E22\u0E02\u0E2D\u0E07 AI \u0E01\u0E32\u0E23\u0E08\u0E31\u0E14\u0E27\u0E32\u0E07\u0E1E\u0E24\u0E15\u0E34\u0E01\u0E23\u0E23\u0E21 \u0E41\u0E25\u0E30\u0E01\u0E32\u0E23\u0E04\u0E27\u0E1A\u0E04\u0E38\u0E21\u0E14\u0E39\u0E41\u0E25\u0E23\u0E30\u0E1A\u0E1A AI \u0E43\u0E2B\u0E49\u0E40\u0E2B\u0E21\u0E32\u0E30\u0E2A\u0E21\u0E41\u0E25\u0E30\u0E1B\u0E25\u0E2D\u0E14\u0E20\u0E31\u0E22\u0E15\u0E48\u0E2D\u0E21\u0E19\u0E38\u0E29\u0E22\u0E4C";
+        intentEN = "The user is examining AI Alignment, ethics, system safety, or model behavior controls.";
+      } else if (isVerification) {
+        intentTH = "\u0E1C\u0E39\u0E49\u0E43\u0E0A\u0E49\u0E15\u0E49\u0E2D\u0E07\u0E01\u0E32\u0E23\u0E15\u0E23\u0E27\u0E08\u0E2A\u0E2D\u0E1A\u0E04\u0E27\u0E32\u0E21\u0E16\u0E39\u0E01\u0E15\u0E49\u0E2D\u0E07\u0E02\u0E2D\u0E07\u0E42\u0E04\u0E49\u0E14\u0E42\u0E1B\u0E23\u0E41\u0E01\u0E23\u0E21 \u0E2B\u0E23\u0E37\u0E2D\u0E15\u0E23\u0E27\u0E08\u0E2A\u0E2D\u0E1A\u0E15\u0E23\u0E23\u0E01\u0E30\u0E41\u0E25\u0E30\u0E40\u0E2B\u0E15\u0E38\u0E1C\u0E25\u0E04\u0E27\u0E32\u0E21\u0E19\u0E48\u0E32\u0E40\u0E0A\u0E37\u0E48\u0E2D\u0E16\u0E37\u0E2D\u0E40\u0E0A\u0E34\u0E07\u0E23\u0E30\u0E1A\u0E1A\u0E04\u0E23\u0E31\u0E1A";
+        intentEN = "The user is validating software code correctness, mathematical logic, or formal verification specs.";
+      } else if (isDecision) {
+        intentTH = "\u0E1C\u0E39\u0E49\u0E43\u0E0A\u0E49\u0E01\u0E33\u0E25\u0E31\u0E07\u0E40\u0E1B\u0E23\u0E35\u0E22\u0E1A\u0E40\u0E17\u0E35\u0E22\u0E1A\u0E17\u0E32\u0E07\u0E40\u0E25\u0E37\u0E2D\u0E01\u0E15\u0E48\u0E32\u0E07 \u0E46 \u0E41\u0E25\u0E30\u0E15\u0E49\u0E2D\u0E07\u0E01\u0E32\u0E23\u0E41\u0E19\u0E27\u0E17\u0E32\u0E07\u0E2B\u0E23\u0E37\u0E2D\u0E02\u0E49\u0E2D\u0E04\u0E34\u0E14\u0E21\u0E32\u0E0A\u0E48\u0E27\u0E22\u0E43\u0E19\u0E01\u0E32\u0E23\u0E1B\u0E23\u0E30\u0E40\u0E21\u0E34\u0E19\u0E40\u0E1E\u0E37\u0E48\u0E2D\u0E15\u0E31\u0E14\u0E2A\u0E34\u0E19\u0E43\u0E08\u0E14\u0E49\u0E27\u0E22\u0E15\u0E19\u0E40\u0E2D\u0E07";
+        intentEN = "The user is weighing alternative paths and requires clean parameters for an autonomous decision.";
+      } else if (isComparison) {
+        intentTH = "\u0E1C\u0E39\u0E49\u0E43\u0E0A\u0E49\u0E15\u0E49\u0E2D\u0E07\u0E01\u0E32\u0E23\u0E40\u0E1B\u0E23\u0E35\u0E22\u0E1A\u0E40\u0E17\u0E35\u0E22\u0E1A\u0E04\u0E27\u0E32\u0E21\u0E41\u0E15\u0E01\u0E15\u0E48\u0E32\u0E07\u0E41\u0E25\u0E30\u0E02\u0E49\u0E2D\u0E14\u0E35\u0E02\u0E49\u0E2D\u0E40\u0E2A\u0E35\u0E22\u0E02\u0E2D\u0E07\u0E41\u0E15\u0E48\u0E25\u0E30\u0E2A\u0E48\u0E27\u0E19 \u0E40\u0E1E\u0E37\u0E48\u0E2D\u0E43\u0E2B\u0E49\u0E40\u0E2B\u0E47\u0E19\u0E21\u0E38\u0E21\u0E21\u0E2D\u0E07\u0E41\u0E25\u0E30\u0E21\u0E34\u0E15\u0E34\u0E17\u0E35\u0E48\u0E01\u0E27\u0E49\u0E32\u0E07\u0E02\u0E36\u0E49\u0E19\u0E23\u0E2D\u0E1A\u0E14\u0E49\u0E32\u0E19";
+        intentEN = "The user wants to objectively compare different options and their trade-offs to get a comprehensive perspective.";
+      } else {
+        intentTH = "\u0E1C\u0E39\u0E49\u0E43\u0E0A\u0E49\u0E15\u0E49\u0E2D\u0E07\u0E01\u0E32\u0E23\u0E27\u0E34\u0E40\u0E04\u0E23\u0E32\u0E30\u0E2B\u0E4C\u0E2B\u0E23\u0E37\u0E2D\u0E1B\u0E23\u0E30\u0E40\u0E21\u0E34\u0E19\u0E02\u0E49\u0E2D\u0E21\u0E39\u0E25\u0E17\u0E31\u0E48\u0E27\u0E44\u0E1B \u0E40\u0E1E\u0E37\u0E48\u0E2D\u0E0A\u0E48\u0E27\u0E22\u0E17\u0E33\u0E04\u0E27\u0E32\u0E21\u0E40\u0E02\u0E49\u0E32\u0E43\u0E08\u0E2A\u0E16\u0E32\u0E19\u0E01\u0E32\u0E23\u0E13\u0E4C\u0E41\u0E25\u0E30\u0E2B\u0E32\u0E41\u0E19\u0E27\u0E17\u0E32\u0E07\u0E40\u0E14\u0E34\u0E19\u0E15\u0E48\u0E2D\u0E04\u0E23\u0E31\u0E1A";
+        intentEN = "The user wants to analyze general information to clarify the context and find the best way forward.";
+      }
+    }
+    state.understanding = state.language === "th" ? intentTH : intentEN;
+    state.record("understanding" /* UNDERSTANDING */, {
+      understanding: state.understanding
+    });
+  }
+  _identify_purpose(state) {
+    this.purposeEngine.process(state);
+    state.record("purpose" /* PURPOSE */, {
+      purpose: state.purpose,
+      constraints: state.constraints
+    });
+  }
+  _retrieve_memory(state) {
+    const userInput = state.user_input;
+    const retrieved = this.memory.retrieve(userInput, 3);
+    state.memories = retrieved;
+    const convTag = `Conversation #${Math.floor(Math.random() * 20) + 10}`;
+    if (retrieved.length > 0) {
+      state.memory_traces = retrieved.map((mem, idx) => {
+        const prevConf = mem.confidence || 0.72;
+        const updatedConf = Math.min(0.95, Number((prevConf + 0.12).toFixed(2)));
+        if (mem.id) {
+          this.memory.recordUsage(mem.id, convTag, updatedConf);
+        }
+        return {
+          memoryId: mem.id || `Memory #${idx + 1}`,
+          createdByStage: mem.createdByStage || "Stage 12 (LEARNING)",
+          usedInConversations: Array.from(/* @__PURE__ */ new Set([...mem.usedInConversations || [], convTag])),
+          confidenceShift: {
+            from: prevConf,
+            to: updatedConf
+          },
+          content: mem.content,
+          layer: mem.layer
+        };
+      });
+    } else {
+      state.memory_traces = [
+        {
+          memoryId: `Memory #${this.memory.getAllItems().length + 1}`,
+          createdByStage: "Stage 4 (MEMORY) / Stage 12 (LEARNING)",
+          usedInConversations: [convTag],
+          confidenceShift: {
+            from: 0.72,
+            to: 0.89
+          },
+          content: `\u0E1A\u0E31\u0E19\u0E17\u0E36\u0E01\u0E2B\u0E19\u0E48\u0E27\u0E22\u0E04\u0E27\u0E32\u0E21\u0E08\u0E33\u0E15\u0E31\u0E49\u0E07\u0E15\u0E49\u0E19\u0E08\u0E32\u0E01\u0E01\u0E32\u0E23\u0E1B\u0E23\u0E30\u0E21\u0E27\u0E25\u0E1C\u0E25: "${userInput.substring(0, 60)}..."`,
+          layer: "project"
+        }
+      ];
+    }
+    state.record("memory" /* MEMORY */, {
+      memories: state.memories,
+      memory_traces: state.memory_traces
+    });
+  }
+  _build_mental_model(state) {
+    const userInput = state.user_input;
+    let metaDomain = "General Analysis & Reason Synthesis (\u0E01\u0E32\u0E23\u0E04\u0E34\u0E14\u0E41\u0E25\u0E30\u0E27\u0E34\u0E40\u0E04\u0E23\u0E32\u0E30\u0E2B\u0E4C\u0E14\u0E49\u0E27\u0E22\u0E40\u0E2B\u0E15\u0E38\u0E1C\u0E25\u0E17\u0E31\u0E48\u0E27\u0E44\u0E1B)";
+    let metaDescription = "\u0E0A\u0E48\u0E27\u0E22\u0E44\u0E15\u0E23\u0E48\u0E15\u0E23\u0E2D\u0E07 \u0E41\u0E22\u0E01\u0E41\u0E22\u0E30\u0E02\u0E49\u0E2D\u0E40\u0E17\u0E47\u0E08\u0E08\u0E23\u0E34\u0E07 \u0E41\u0E25\u0E30\u0E21\u0E2D\u0E07\u0E21\u0E38\u0E21\u0E15\u0E48\u0E32\u0E07 \u0E46 \u0E40\u0E1E\u0E37\u0E48\u0E2D\u0E0A\u0E48\u0E27\u0E22\u0E43\u0E2B\u0E49\u0E40\u0E02\u0E49\u0E32\u0E43\u0E08\u0E1B\u0E31\u0E0D\u0E2B\u0E32\u0E44\u0E14\u0E49\u0E0A\u0E31\u0E14\u0E40\u0E08\u0E19\u0E02\u0E36\u0E49\u0E19";
+    if (/epistemology|knowledge|truth|ความจริง|สัจจะ|ความรู้/i.test(userInput)) {
+      metaDomain = "Epistemology (\u0E01\u0E32\u0E23\u0E1B\u0E23\u0E30\u0E40\u0E21\u0E34\u0E19\u0E41\u0E2B\u0E25\u0E48\u0E07\u0E17\u0E35\u0E48\u0E21\u0E32\u0E41\u0E25\u0E30\u0E04\u0E27\u0E32\u0E21\u0E19\u0E48\u0E32\u0E40\u0E0A\u0E37\u0E48\u0E2D\u0E16\u0E37\u0E2D\u0E02\u0E2D\u0E07\u0E02\u0E49\u0E2D\u0E21\u0E39\u0E25)";
+      metaDescription = "\u0E15\u0E23\u0E27\u0E08\u0E2A\u0E2D\u0E1A\u0E04\u0E27\u0E32\u0E21\u0E19\u0E48\u0E32\u0E40\u0E0A\u0E37\u0E48\u0E2D\u0E16\u0E37\u0E2D \u0E41\u0E2B\u0E25\u0E48\u0E07\u0E17\u0E35\u0E48\u0E21\u0E32 \u0E41\u0E25\u0E30\u0E04\u0E27\u0E32\u0E21\u0E16\u0E39\u0E01\u0E15\u0E49\u0E2D\u0E07\u0E02\u0E2D\u0E07\u0E02\u0E49\u0E2D\u0E21\u0E39\u0E25\u0E27\u0E48\u0E32\u0E21\u0E35\u0E19\u0E49\u0E33\u0E2B\u0E19\u0E31\u0E01\u0E21\u0E32\u0E01\u0E41\u0E04\u0E48\u0E44\u0E2B\u0E19";
+    } else if (/alignment|safety|ai|ethics|moral|ปัญญาประดิษฐ์|จริยธรรม|ดีชั่ว/i.test(userInput)) {
+      metaDomain = "AI Alignment & Ethics (\u0E01\u0E32\u0E23\u0E2D\u0E2D\u0E01\u0E41\u0E1A\u0E1A AI \u0E43\u0E2B\u0E49\u0E1B\u0E25\u0E2D\u0E14\u0E20\u0E31\u0E22\u0E41\u0E25\u0E30\u0E40\u0E1B\u0E47\u0E19\u0E1B\u0E23\u0E30\u0E42\u0E22\u0E0A\u0E19\u0E4C\u0E15\u0E48\u0E2D\u0E21\u0E19\u0E38\u0E29\u0E22\u0E4C)";
+      metaDescription = "\u0E27\u0E34\u0E40\u0E04\u0E23\u0E32\u0E30\u0E2B\u0E4C\u0E27\u0E48\u0E32\u0E23\u0E30\u0E1A\u0E1A AI \u0E08\u0E30\u0E17\u0E33\u0E07\u0E32\u0E19\u0E44\u0E14\u0E49\u0E2D\u0E22\u0E48\u0E32\u0E07\u0E1B\u0E25\u0E2D\u0E14\u0E20\u0E31\u0E22 \u0E40\u0E02\u0E49\u0E32\u0E43\u0E08\u0E41\u0E25\u0E30\u0E2A\u0E2D\u0E14\u0E04\u0E25\u0E49\u0E2D\u0E07\u0E01\u0E31\u0E1A\u0E04\u0E27\u0E32\u0E21\u0E15\u0E49\u0E2D\u0E07\u0E01\u0E32\u0E23\u0E02\u0E2D\u0E07\u0E04\u0E19\u0E17\u0E33\u0E07\u0E32\u0E19\u0E08\u0E23\u0E34\u0E07\u0E44\u0E2B\u0E21";
+    } else if (/verify|formal|correctness|logic|code|program|พิสูจน์|ตรวจสอบ|ตรรกะ/i.test(userInput)) {
+      metaDomain = "Formal Verification & Logic (\u0E01\u0E32\u0E23\u0E40\u0E0A\u0E47\u0E04\u0E04\u0E27\u0E32\u0E21\u0E16\u0E39\u0E01\u0E15\u0E49\u0E2D\u0E07\u0E41\u0E25\u0E30\u0E04\u0E27\u0E32\u0E21\u0E1B\u0E25\u0E2D\u0E14\u0E20\u0E31\u0E22\u0E02\u0E2D\u0E07\u0E42\u0E1B\u0E23\u0E41\u0E01\u0E23\u0E21)";
+      metaDescription = "\u0E40\u0E0A\u0E47\u0E04\u0E42\u0E04\u0E23\u0E07\u0E2A\u0E23\u0E49\u0E32\u0E07\u0E15\u0E23\u0E23\u0E01\u0E30\u0E41\u0E25\u0E30\u0E42\u0E04\u0E49\u0E14\u0E40\u0E1E\u0E37\u0E48\u0E2D\u0E2B\u0E32\u0E02\u0E49\u0E2D\u0E1A\u0E01\u0E1E\u0E23\u0E48\u0E2D\u0E07\u0E2B\u0E23\u0E37\u0E2D\u0E08\u0E38\u0E14\u0E40\u0E2A\u0E35\u0E48\u0E22\u0E07\u0E17\u0E35\u0E48\u0E2D\u0E32\u0E08\u0E17\u0E33\u0E43\u0E2B\u0E49\u0E23\u0E30\u0E1A\u0E1A\u0E17\u0E33\u0E07\u0E32\u0E19\u0E1C\u0E34\u0E14\u0E1E\u0E25\u0E32\u0E14";
+    } else if (/decide|choose|ทางเลือก|เลือก|ดีไหม|ตัดสินใจ/i.test(userInput)) {
+      metaDomain = "Decision Theory & Trade-offs (\u0E01\u0E32\u0E23\u0E40\u0E1B\u0E23\u0E35\u0E22\u0E1A\u0E40\u0E17\u0E35\u0E22\u0E1A\u0E02\u0E49\u0E2D\u0E14\u0E35\u0E02\u0E49\u0E2D\u0E40\u0E2A\u0E35\u0E22\u0E02\u0E2D\u0E07\u0E41\u0E15\u0E48\u0E25\u0E30\u0E17\u0E32\u0E07\u0E40\u0E25\u0E37\u0E2D\u0E01)";
+      metaDescription = "\u0E1B\u0E23\u0E30\u0E40\u0E21\u0E34\u0E19\u0E19\u0E49\u0E33\u0E2B\u0E19\u0E31\u0E01 \u0E04\u0E27\u0E32\u0E21\u0E04\u0E38\u0E49\u0E21\u0E04\u0E48\u0E32 \u0E04\u0E27\u0E32\u0E21\u0E40\u0E1B\u0E47\u0E19\u0E44\u0E1B\u0E44\u0E14\u0E49 \u0E41\u0E25\u0E30\u0E1C\u0E25\u0E01\u0E23\u0E30\u0E17\u0E1A\u0E02\u0E2D\u0E07\u0E01\u0E32\u0E23\u0E15\u0E31\u0E14\u0E2A\u0E34\u0E19\u0E43\u0E08\u0E43\u0E19\u0E41\u0E15\u0E48\u0E25\u0E30\u0E17\u0E32\u0E07\u0E40\u0E25\u0E37\u0E2D\u0E01";
+    }
+    state.mental_models = [metaDomain];
+    state.strategy_selection = {
+      chosenStrategy: "Adversarial Dialectic Matrix (Pros/Cons & Counter-Evidence)",
+      rationale: "\u0E40\u0E25\u0E37\u0E2D\u0E01\u0E01\u0E32\u0E23\u0E1B\u0E23\u0E30\u0E40\u0E21\u0E34\u0E19\u0E27\u0E34\u0E1E\u0E32\u0E01\u0E29\u0E4C\u0E17\u0E32\u0E07\u0E40\u0E25\u0E37\u0E2D\u0E01\u0E02\u0E19\u0E32\u0E19\u0E23\u0E48\u0E27\u0E21\u0E01\u0E31\u0E1A\u0E2B\u0E25\u0E31\u0E01\u0E10\u0E32\u0E19\u0E42\u0E15\u0E49\u0E41\u0E22\u0E49\u0E07 \u0E40\u0E1E\u0E37\u0E48\u0E2D\u0E23\u0E31\u0E01\u0E29\u0E32\u0E40\u0E2A\u0E23\u0E35\u0E20\u0E32\u0E1E\u0E01\u0E32\u0E23\u0E15\u0E31\u0E14\u0E2A\u0E34\u0E19\u0E43\u0E08\u0E02\u0E2D\u0E07\u0E21\u0E19\u0E38\u0E29\u0E22\u0E4C (Human Agency) \u0E41\u0E25\u0E30\u0E1B\u0E49\u0E2D\u0E07\u0E01\u0E31\u0E19\u0E2D\u0E04\u0E15\u0E34\u0E40\u0E02\u0E49\u0E32\u0E02\u0E49\u0E32\u0E07\u0E15\u0E19\u0E40\u0E2D\u0E07",
+      consideredStrategies: [
+        {
+          name: "Adversarial Dialectic Matrix",
+          status: "selected",
+          pros: "\u0E41\u0E22\u0E01\u0E41\u0E22\u0E30 Fact vs Interpretation \u0E2A\u0E23\u0E38\u0E1B\u0E02\u0E49\u0E2D\u0E14\u0E35 \u0E02\u0E49\u0E2D\u0E40\u0E2A\u0E35\u0E22 \u0E04\u0E27\u0E32\u0E21\u0E40\u0E2A\u0E35\u0E48\u0E22\u0E07 \u0E41\u0E25\u0E30 failure conditions \u0E2D\u0E22\u0E48\u0E32\u0E07\u0E40\u0E1B\u0E47\u0E19\u0E01\u0E25\u0E32\u0E07",
+          cons: "\u0E15\u0E49\u0E2D\u0E07\u0E1B\u0E23\u0E30\u0E21\u0E27\u0E25\u0E1C\u0E25\u0E01\u0E23\u0E30\u0E1A\u0E27\u0E19\u0E01\u0E32\u0E23\u0E27\u0E34\u0E1E\u0E32\u0E01\u0E29\u0E4C\u0E2B\u0E25\u0E32\u0E22\u0E23\u0E30\u0E14\u0E31\u0E1A (Multi-stage Critique Engine)"
+        },
+        {
+          name: "Bayesian Inference Network",
+          status: "rejected",
+          pros: "\u0E04\u0E33\u0E19\u0E27\u0E13\u0E01\u0E32\u0E23\u0E2D\u0E31\u0E1B\u0E40\u0E14\u0E15\u0E04\u0E27\u0E32\u0E21\u0E19\u0E48\u0E32\u0E08\u0E30\u0E40\u0E1B\u0E47\u0E19\u0E40\u0E0A\u0E34\u0E07\u0E15\u0E31\u0E27\u0E40\u0E25\u0E02\u0E17\u0E32\u0E07\u0E04\u0E13\u0E34\u0E15\u0E28\u0E32\u0E2A\u0E15\u0E23\u0E4C\u0E2D\u0E22\u0E48\u0E32\u0E07\u0E40\u0E1B\u0E47\u0E19\u0E23\u0E30\u0E1A\u0E1A",
+          cons: "\u0E44\u0E21\u0E48\u0E40\u0E2B\u0E21\u0E32\u0E30\u0E01\u0E31\u0E1A\u0E1A\u0E23\u0E34\u0E1A\u0E17\u0E17\u0E32\u0E07\u0E22\u0E38\u0E17\u0E18\u0E28\u0E32\u0E2A\u0E15\u0E23\u0E4C\u0E2B\u0E23\u0E37\u0E2D\u0E1B\u0E23\u0E31\u0E0A\u0E0D\u0E32\u0E17\u0E35\u0E48\u0E44\u0E21\u0E48\u0E21\u0E35\u0E0A\u0E38\u0E14\u0E02\u0E49\u0E2D\u0E21\u0E39\u0E25\u0E04\u0E27\u0E32\u0E21\u0E19\u0E48\u0E32\u0E08\u0E30\u0E40\u0E1B\u0E47\u0E19\u0E40\u0E23\u0E34\u0E48\u0E21\u0E15\u0E49\u0E19 (Prior Probability) \u0E17\u0E35\u0E48\u0E41\u0E19\u0E48\u0E0A\u0E31\u0E14",
+          rejectionReason: "\u0E02\u0E32\u0E14\u0E0A\u0E38\u0E14\u0E02\u0E49\u0E2D\u0E21\u0E39\u0E25\u0E15\u0E31\u0E27\u0E40\u0E25\u0E02\u0E04\u0E27\u0E32\u0E21\u0E19\u0E48\u0E32\u0E08\u0E30\u0E40\u0E1B\u0E47\u0E19\u0E40\u0E0A\u0E34\u0E07\u0E1B\u0E23\u0E30\u0E08\u0E31\u0E01\u0E29\u0E4C (Quantitative Priors) \u0E17\u0E35\u0E48\u0E27\u0E31\u0E14\u0E44\u0E14\u0E49\u0E2D\u0E22\u0E48\u0E32\u0E07\u0E2D\u0E34\u0E2A\u0E23\u0E30\u0E43\u0E19\u0E04\u0E33\u0E02\u0E2D\u0E19\u0E35\u0E49"
+        },
+        {
+          name: "Causal Chain Analysis",
+          status: "partially_used",
+          pros: "\u0E15\u0E34\u0E14\u0E15\u0E32\u0E21\u0E2B\u0E48\u0E27\u0E07\u0E42\u0E0B\u0E48\u0E40\u0E2B\u0E15\u0E38\u0E41\u0E25\u0E30\u0E1C\u0E25 [\u0E2A\u0E32\u0E40\u0E2B\u0E15\u0E38 -> \u0E01\u0E25\u0E44\u0E01 -> \u0E1C\u0E25\u0E25\u0E31\u0E1E\u0E18\u0E4C\u0E02\u0E31\u0E49\u0E19\u0E01\u0E25\u0E32\u0E07 -> \u0E1C\u0E25\u0E01\u0E23\u0E30\u0E17\u0E1A\u0E2A\u0E38\u0E14\u0E17\u0E49\u0E32\u0E22]",
+          cons: "\u0E21\u0E31\u0E01\u0E40\u0E19\u0E49\u0E19\u0E2A\u0E32\u0E22\u0E17\u0E32\u0E07\u0E40\u0E14\u0E34\u0E19\u0E40\u0E14\u0E35\u0E22\u0E27 \u0E25\u0E30\u0E40\u0E25\u0E22\u0E17\u0E32\u0E07\u0E40\u0E25\u0E37\u0E2D\u0E01\u0E02\u0E19\u0E32\u0E19\u0E2D\u0E37\u0E48\u0E19 \u0E46",
+          rejectionReason: "\u0E19\u0E33\u0E21\u0E32\u0E1B\u0E23\u0E30\u0E22\u0E38\u0E01\u0E15\u0E4C\u0E43\u0E0A\u0E49\u0E40\u0E1B\u0E47\u0E19\u0E2A\u0E48\u0E27\u0E19\u0E1B\u0E23\u0E30\u0E01\u0E2D\u0E1A\u0E2A\u0E19\u0E31\u0E1A\u0E2A\u0E19\u0E38\u0E19\u0E43\u0E19\u0E2B\u0E21\u0E27\u0E14 Causal Chain Analysis \u0E41\u0E15\u0E48\u0E44\u0E21\u0E48\u0E43\u0E0A\u0E48\u0E22\u0E38\u0E17\u0E18\u0E28\u0E32\u0E2A\u0E15\u0E23\u0E4C\u0E2B\u0E25\u0E31\u0E01\u0E2B\u0E25\u0E31\u0E01\u0E40\u0E14\u0E35\u0E22\u0E27"
+        }
+      ]
+    };
+    state.record("mental_model" /* MENTAL_MODEL */, {
+      selected_model: metaDomain,
+      description: metaDescription,
+      strategy_selection: state.strategy_selection
+    });
+  }
+  _generate_hypotheses(state) {
+    const userInput = state.user_input;
+    const isPhilosophy = /epistemology|knowledge|truth|ความจริง|สัจจะ|ความรู้/i.test(userInput);
+    const isAI = /alignment|safety|ai|ethics/i.test(userInput);
+    const isVerification = /verify|formal|logic|code|program/i.test(userInput);
+    const isDecision = /decide|choose|เลือก|ตัดสินใจ/i.test(userInput);
+    if (isPhilosophy) {
+      state.hypotheses = [
+        { claim: "\u0E2A\u0E21\u0E21\u0E15\u0E34\u0E10\u0E32\u0E19\u0E17\u0E35\u0E48 1: \u0E04\u0E27\u0E32\u0E21\u0E08\u0E23\u0E34\u0E07\u0E21\u0E32\u0E08\u0E32\u0E01\u0E02\u0E49\u0E2D\u0E40\u0E17\u0E47\u0E08\u0E08\u0E23\u0E34\u0E07\u0E41\u0E25\u0E30\u0E2B\u0E25\u0E31\u0E01\u0E10\u0E32\u0E19\u0E17\u0E35\u0E48\u0E1E\u0E34\u0E2A\u0E39\u0E08\u0E19\u0E4C\u0E44\u0E14\u0E49\u0E0A\u0E31\u0E14\u0E40\u0E08\u0E19\u0E17\u0E32\u0E07\u0E27\u0E34\u0E17\u0E22\u0E32\u0E28\u0E32\u0E2A\u0E15\u0E23\u0E4C" },
+        { claim: "\u0E2A\u0E21\u0E21\u0E15\u0E34\u0E10\u0E32\u0E19\u0E17\u0E35\u0E48 2: \u0E04\u0E27\u0E32\u0E21\u0E08\u0E23\u0E34\u0E07\u0E40\u0E1B\u0E25\u0E35\u0E48\u0E22\u0E19\u0E44\u0E1B\u0E15\u0E32\u0E21\u0E21\u0E38\u0E21\u0E21\u0E2D\u0E07 \u0E27\u0E31\u0E12\u0E19\u0E18\u0E23\u0E23\u0E21 \u0E41\u0E25\u0E30\u0E1B\u0E23\u0E30\u0E2A\u0E1A\u0E01\u0E32\u0E23\u0E13\u0E4C\u0E40\u0E09\u0E1E\u0E32\u0E30\u0E15\u0E31\u0E27\u0E02\u0E2D\u0E07\u0E41\u0E15\u0E48\u0E25\u0E30\u0E04\u0E19" },
+        { claim: "\u0E2A\u0E21\u0E21\u0E15\u0E34\u0E10\u0E32\u0E19\u0E17\u0E35\u0E48 3: \u0E04\u0E27\u0E32\u0E21\u0E08\u0E23\u0E34\u0E07\u0E40\u0E1B\u0E47\u0E19\u0E2A\u0E34\u0E48\u0E07\u0E17\u0E35\u0E48\u0E2A\u0E31\u0E07\u0E04\u0E21\u0E2A\u0E23\u0E49\u0E32\u0E07\u0E23\u0E48\u0E27\u0E21\u0E01\u0E31\u0E19\u0E02\u0E36\u0E49\u0E19\u0E21\u0E32\u0E40\u0E1E\u0E37\u0E48\u0E2D\u0E08\u0E31\u0E14\u0E23\u0E30\u0E40\u0E1A\u0E35\u0E22\u0E1A\u0E2B\u0E23\u0E37\u0E2D\u0E23\u0E31\u0E01\u0E29\u0E32\u0E01\u0E0E\u0E40\u0E01\u0E13\u0E11\u0E4C" }
+      ];
+    } else if (isAI) {
+      state.hypotheses = [
+        { claim: "\u0E2A\u0E21\u0E21\u0E15\u0E34\u0E10\u0E32\u0E19\u0E17\u0E35\u0E48 1: \u0E01\u0E32\u0E23\u0E17\u0E33\u0E43\u0E2B\u0E49 AI \u0E1B\u0E25\u0E2D\u0E14\u0E20\u0E31\u0E22\u0E17\u0E33\u0E44\u0E14\u0E49\u0E14\u0E35\u0E17\u0E35\u0E48\u0E2A\u0E38\u0E14\u0E42\u0E14\u0E22\u0E01\u0E32\u0E23\u0E15\u0E31\u0E49\u0E07\u0E01\u0E0E\u0E17\u0E35\u0E48\u0E0A\u0E31\u0E14\u0E40\u0E08\u0E19\u0E41\u0E25\u0E30\u0E40\u0E02\u0E49\u0E21\u0E07\u0E27\u0E14\u0E43\u0E2B\u0E49\u0E17\u0E33\u0E15\u0E32\u0E21" },
+        { claim: "\u0E2A\u0E21\u0E21\u0E15\u0E34\u0E10\u0E32\u0E19\u0E17\u0E35\u0E48 2: \u0E01\u0E32\u0E23\u0E2A\u0E2D\u0E19\u0E43\u0E2B\u0E49 AI \u0E40\u0E02\u0E49\u0E32\u0E43\u0E08\u0E41\u0E25\u0E30\u0E0B\u0E36\u0E21\u0E0B\u0E31\u0E1A\u0E04\u0E48\u0E32\u0E19\u0E34\u0E22\u0E21\u0E02\u0E2D\u0E07\u0E21\u0E19\u0E38\u0E29\u0E22\u0E4C\u0E21\u0E35\u0E04\u0E27\u0E32\u0E21\u0E22\u0E37\u0E14\u0E2B\u0E22\u0E38\u0E48\u0E19\u0E41\u0E25\u0E30\u0E14\u0E35\u0E01\u0E27\u0E48\u0E32\u0E43\u0E19\u0E23\u0E30\u0E22\u0E30\u0E22\u0E32\u0E27" },
+        { claim: "\u0E2A\u0E21\u0E21\u0E15\u0E34\u0E10\u0E32\u0E19\u0E17\u0E35\u0E48 3: \u0E04\u0E27\u0E32\u0E21\u0E40\u0E2A\u0E35\u0E48\u0E22\u0E07\u0E40\u0E01\u0E34\u0E14\u0E08\u0E32\u0E01\u0E01\u0E32\u0E23\u0E17\u0E35\u0E48 AI \u0E15\u0E35\u0E04\u0E27\u0E32\u0E21\u0E04\u0E27\u0E32\u0E21\u0E15\u0E49\u0E2D\u0E07\u0E01\u0E32\u0E23\u0E02\u0E2D\u0E07\u0E21\u0E19\u0E38\u0E29\u0E22\u0E4C\u0E1C\u0E34\u0E14\u0E44\u0E1B \u0E08\u0E36\u0E07\u0E15\u0E49\u0E2D\u0E07\u0E04\u0E2D\u0E22\u0E15\u0E23\u0E27\u0E08\u0E2A\u0E2D\u0E1A\u0E2D\u0E22\u0E48\u0E32\u0E07\u0E2A\u0E21\u0E48\u0E33\u0E40\u0E2A\u0E21\u0E2D" }
+      ];
+    } else if (isVerification) {
+      state.hypotheses = [
+        { claim: "\u0E2A\u0E21\u0E21\u0E15\u0E34\u0E10\u0E32\u0E19\u0E17\u0E35\u0E48 1: \u0E42\u0E04\u0E49\u0E14\u0E2B\u0E23\u0E37\u0E2D\u0E23\u0E30\u0E1A\u0E1A\u0E21\u0E35\u0E04\u0E27\u0E32\u0E21\u0E16\u0E39\u0E01\u0E15\u0E49\u0E2D\u0E07\u0E15\u0E32\u0E21\u0E17\u0E35\u0E48\u0E2D\u0E2D\u0E01\u0E41\u0E1A\u0E1A\u0E44\u0E27\u0E49 \u0E44\u0E21\u0E48\u0E21\u0E35\u0E08\u0E38\u0E14\u0E1A\u0E01\u0E1E\u0E23\u0E48\u0E2D\u0E07\u0E43\u0E19\u0E42\u0E04\u0E23\u0E07\u0E2A\u0E23\u0E49\u0E32\u0E07\u0E2B\u0E25\u0E31\u0E01" },
+        { claim: "\u0E2A\u0E21\u0E21\u0E15\u0E34\u0E10\u0E32\u0E19\u0E17\u0E35\u0E48 2: \u0E42\u0E04\u0E49\u0E14\u0E16\u0E39\u0E01\u0E15\u0E49\u0E2D\u0E07\u0E43\u0E19\u0E17\u0E32\u0E07\u0E17\u0E24\u0E29\u0E0E\u0E35 \u0E41\u0E2D\u0E39\u0E48\u0E2D\u0E32\u0E08\u0E40\u0E01\u0E34\u0E14\u0E1B\u0E31\u0E0D\u0E2B\u0E32\u0E44\u0E14\u0E49\u0E40\u0E21\u0E37\u0E48\u0E2D\u0E40\u0E08\u0E2D\u0E01\u0E25\u0E38\u0E48\u0E21\u0E02\u0E49\u0E2D\u0E21\u0E39\u0E25\u0E41\u0E1B\u0E25\u0E01 \u0E46 \u0E2B\u0E23\u0E37\u0E2D\u0E2E\u0E32\u0E23\u0E4C\u0E14\u0E41\u0E27\u0E23\u0E4C\u0E17\u0E33\u0E07\u0E32\u0E19\u0E1C\u0E34\u0E14\u0E1E\u0E25\u0E32\u0E14" },
+        { claim: "\u0E2A\u0E21\u0E21\u0E15\u0E34\u0E10\u0E32\u0E19\u0E17\u0E35\u0E48 3: \u0E02\u0E49\u0E2D\u0E21\u0E39\u0E25\u0E04\u0E27\u0E32\u0E21\u0E15\u0E49\u0E2D\u0E07\u0E01\u0E32\u0E23\u0E23\u0E30\u0E1A\u0E1A\u0E22\u0E31\u0E07\u0E40\u0E02\u0E35\u0E22\u0E19\u0E44\u0E27\u0E49\u0E44\u0E21\u0E48\u0E04\u0E23\u0E1A\u0E16\u0E49\u0E27\u0E19 \u0E17\u0E33\u0E43\u0E2B\u0E49\u0E23\u0E30\u0E1A\u0E1A\u0E2D\u0E32\u0E08\u0E40\u0E01\u0E34\u0E14\u0E08\u0E38\u0E14\u0E1A\u0E01\u0E1E\u0E23\u0E48\u0E2D\u0E07\u0E43\u0E19\u0E01\u0E23\u0E13\u0E35\u0E1E\u0E34\u0E40\u0E28\u0E29" }
+      ];
+    } else if (isDecision) {
+      state.hypotheses = [
+        { claim: "\u0E2A\u0E21\u0E21\u0E15\u0E34\u0E10\u0E32\u0E19\u0E17\u0E35\u0E48 1: \u0E17\u0E32\u0E07\u0E40\u0E25\u0E37\u0E2D\u0E01\u0E41\u0E23\u0E01\u0E04\u0E38\u0E49\u0E21\u0E04\u0E48\u0E32\u0E40\u0E07\u0E34\u0E19\u0E41\u0E25\u0E30\u0E04\u0E27\u0E32\u0E21\u0E40\u0E1B\u0E47\u0E19\u0E44\u0E1B\u0E44\u0E14\u0E49\u0E2A\u0E39\u0E07\u0E17\u0E35\u0E48\u0E01\u0E32\u0E23\u0E40\u0E23\u0E34\u0E48\u0E21\u0E17\u0E14\u0E25\u0E2D\u0E07\u0E17\u0E33\u0E43\u0E19\u0E2A\u0E40\u0E01\u0E25\u0E40\u0E25\u0E47\u0E01 \u0E46 \u0E01\u0E48\u0E2D\u0E19 \u0E08\u0E30\u0E0A\u0E48\u0E27\u0E22\u0E25\u0E14\u0E04\u0E27\u0E32\u0E21\u0E40\u0E2A\u0E35\u0E48\u0E22\u0E07\u0E41\u0E25\u0E30\u0E04\u0E27\u0E32\u0E21\u0E40\u0E2A\u0E35\u0E22\u0E2B\u0E32\u0E22\u0E17\u0E35\u0E48\u0E08\u0E30\u0E40\u0E01\u0E34\u0E14\u0E02\u0E36\u0E49\u0E19\u0E44\u0E14\u0E49\u0E14\u0E35\u0E17\u0E35\u0E48\u0E2A\u0E38\u0E14" },
+        { claim: "\u0E2A\u0E21\u0E21\u0E15\u0E34\u0E10\u0E32\u0E19\u0E17\u0E35\u0E48 2: \u0E17\u0E32\u0E07\u0E40\u0E25\u0E37\u0E2D\u0E01\u0E17\u0E35\u0E48\u0E2A\u0E2D\u0E07\u0E04\u0E38\u0E49\u0E21\u0E04\u0E48\u0E32\u0E40\u0E07\u0E34\u0E19\u0E43\u0E19\u0E23\u0E30\u0E22\u0E30\u0E22\u0E32\u0E27 \u0E41\u0E21\u0E49\u0E15\u0E49\u0E2D\u0E07\u0E41\u0E25\u0E01\u0E14\u0E49\u0E27\u0E22\u0E07\u0E1A\u0E1B\u0E23\u0E30\u0E21\u0E32\u0E13\u0E41\u0E25\u0E30\u0E04\u0E27\u0E32\u0E21\u0E0B\u0E31\u0E1A\u0E0B\u0E49\u0E2D\u0E19\u0E43\u0E19\u0E01\u0E32\u0E23\u0E15\u0E31\u0E49\u0E07\u0E04\u0E48\u0E32\u0E41\u0E23\u0E01\u0E40\u0E23\u0E34\u0E48\u0E21" },
+        { claim: "\u0E2A\u0E21\u0E21\u0E15\u0E34\u0E10\u0E32\u0E19\u0E17\u0E35\u0E48 3: \u0E01\u0E32\u0E23\u0E23\u0E31\u0E01\u0E29\u0E32\u0E2A\u0E16\u0E32\u0E19\u0E30\u0E40\u0E14\u0E34\u0E21\u0E0A\u0E31\u0E48\u0E27\u0E04\u0E23\u0E32\u0E27\u0E41\u0E25\u0E30\u0E17\u0E33\u0E01\u0E32\u0E23\u0E17\u0E14\u0E25\u0E2D\u0E07\u0E2A\u0E40\u0E01\u0E25\u0E40\u0E25\u0E47\u0E01 (Minimal Viable Experiment) \u0E40\u0E1B\u0E47\u0E19\u0E15\u0E31\u0E27\u0E40\u0E25\u0E37\u0E2D\u0E01\u0E17\u0E35\u0E48\u0E25\u0E14\u0E04\u0E27\u0E32\u0E21\u0E40\u0E2A\u0E35\u0E48\u0E22\u0E07\u0E40\u0E0A\u0E34\u0E07\u0E23\u0E30\u0E1A\u0E1A\u0E21\u0E32\u0E01\u0E17\u0E35\u0E48\u0E2A\u0E38\u0E14" }
+      ];
+    } else {
+      state.hypotheses = [
+        { claim: "\u0E2A\u0E21\u0E21\u0E15\u0E34\u0E10\u0E32\u0E19\u0E17\u0E35\u0E48 1: \u0E1B\u0E31\u0E0D\u0E2B\u0E32\u0E14\u0E31\u0E07\u0E01\u0E25\u0E48\u0E32\u0E27\u0E2A\u0E32\u0E21\u0E32\u0E23\u0E16\u0E2D\u0E18\u0E34\u0E1A\u0E32\u0E22\u0E44\u0E14\u0E49\u0E14\u0E49\u0E27\u0E22\u0E01\u0E23\u0E2D\u0E1A\u0E17\u0E24\u0E29\u0E0E\u0E35\u0E40\u0E0A\u0E34\u0E07\u0E1B\u0E23\u0E30\u0E08\u0E31\u0E01\u0E29\u0E4C\u0E17\u0E35\u0E48\u0E21\u0E35\u0E2B\u0E25\u0E31\u0E01\u0E10\u0E32\u0E19\u0E40\u0E0A\u0E34\u0E07\u0E1B\u0E23\u0E34\u0E21\u0E32\u0E13\u0E23\u0E2D\u0E07\u0E23\u0E31\u0E1A" },
+        { claim: "\u0E2A\u0E21\u0E21\u0E15\u0E34\u0E10\u0E32\u0E19\u0E17\u0E35\u0E48 2: \u0E1B\u0E31\u0E0D\u0E2B\u0E32\u0E14\u0E31\u0E07\u0E01\u0E25\u0E48\u0E32\u0E27\u0E40\u0E01\u0E34\u0E14\u0E08\u0E32\u0E01\u0E04\u0E27\u0E32\u0E21\u0E40\u0E02\u0E49\u0E32\u0E43\u0E08\u0E2B\u0E23\u0E37\u0E2D\u0E19\u0E34\u0E22\u0E32\u0E21\u0E28\u0E31\u0E1E\u0E17\u0E4C\u0E17\u0E35\u0E48\u0E44\u0E21\u0E48\u0E15\u0E23\u0E07\u0E01\u0E31\u0E19\u0E23\u0E30\u0E2B\u0E27\u0E48\u0E32\u0E07\u0E1D\u0E48\u0E32\u0E22\u0E15\u0E48\u0E32\u0E07 \u0E46" },
+        { claim: "\u0E2A\u0E21\u0E21\u0E15\u0E34\u0E10\u0E32\u0E19\u0E17\u0E35\u0E48 3: \u0E02\u0E49\u0E2D\u0E2A\u0E23\u0E38\u0E1B\u0E17\u0E35\u0E48\u0E14\u0E35\u0E17\u0E35\u0E48\u0E2A\u0E38\u0E14\u0E15\u0E49\u0E2D\u0E07\u0E01\u0E32\u0E23\u0E2A\u0E48\u0E27\u0E19\u0E1C\u0E2A\u0E21\u0E02\u0E2D\u0E07\u0E2A\u0E2D\u0E07\u0E21\u0E34\u0E15\u0E34 \u0E17\u0E31\u0E49\u0E07\u0E40\u0E0A\u0E34\u0E07\u0E1B\u0E23\u0E34\u0E21\u0E32\u0E13\u0E41\u0E25\u0E30\u0E40\u0E0A\u0E34\u0E07\u0E04\u0E38\u0E13\u0E20\u0E32\u0E1E" }
+      ];
+    }
+    state.record("hypothesis" /* HYPOTHESIS */, {
+      hypotheses: state.hypotheses
+    });
+  }
+  _evaluate_evidence(state) {
+    const userInput = state.user_input;
+    let evalText = "";
+    let confidence = 0.75;
+    const hasMemories = state.memories.length > 0;
+    if (hasMemories) {
+      confidence = 0.85;
+    } else {
+      confidence = 0.55;
+    }
+    const isPhilosophy = /epistemology|knowledge|truth|ความจริง|สัจจะ|ความรู้/i.test(userInput);
+    const isAI = /alignment|safety|ai|ethics/i.test(userInput);
+    const isVerification = /verify|formal|logic|code|program/i.test(userInput);
+    const isDecision = /decide|choose|เลือก|ตัดสินใจ/i.test(userInput);
+    if (isPhilosophy) {
+      evalText = "\u0E23\u0E30\u0E1A\u0E1A\u0E1B\u0E23\u0E30\u0E40\u0E21\u0E34\u0E19\u0E2B\u0E25\u0E31\u0E01\u0E10\u0E32\u0E19\u0E40\u0E0A\u0E34\u0E07\u0E40\u0E2B\u0E15\u0E38\u0E1C\u0E25\u0E41\u0E25\u0E30\u0E02\u0E49\u0E2D\u0E27\u0E34\u0E1E\u0E32\u0E01\u0E29\u0E4C\u0E17\u0E32\u0E07\u0E1B\u0E23\u0E31\u0E0A\u0E0D\u0E32 \u0E1E\u0E1A\u0E27\u0E48\u0E32\u0E2B\u0E25\u0E31\u0E01\u0E10\u0E32\u0E19\u0E2A\u0E48\u0E27\u0E19\u0E43\u0E2B\u0E0D\u0E48\u0E40\u0E1B\u0E47\u0E19\u0E40\u0E0A\u0E34\u0E07\u0E17\u0E24\u0E29\u0E0E\u0E35 (Theoretical arguments) \u0E17\u0E35\u0E48\u0E2D\u0E49\u0E32\u0E07\u0E2D\u0E34\u0E07\u0E2A\u0E31\u0E08\u0E1E\u0E08\u0E19\u0E4C\u0E15\u0E48\u0E32\u0E07\u0E01\u0E23\u0E23\u0E21\u0E15\u0E48\u0E32\u0E07\u0E27\u0E32\u0E23\u0E30 \u0E02\u0E49\u0E2D\u0E2A\u0E19\u0E31\u0E1A\u0E2A\u0E19\u0E38\u0E19\u0E2B\u0E25\u0E31\u0E01\u0E10\u0E32\u0E19\u0E02\u0E2D\u0E07\u0E2A\u0E21\u0E21\u0E15\u0E34\u0E10\u0E32\u0E19\u0E17\u0E35\u0E48 1 \u0E21\u0E35\u0E04\u0E27\u0E32\u0E21\u0E40\u0E14\u0E48\u0E19\u0E0A\u0E31\u0E14\u0E43\u0E19\u0E21\u0E34\u0E15\u0E34\u0E27\u0E34\u0E17\u0E22\u0E32\u0E28\u0E32\u0E2A\u0E15\u0E23\u0E4C\u0E40\u0E0A\u0E34\u0E07\u0E1A\u0E27\u0E01 (Positivism) \u0E43\u0E19\u0E02\u0E13\u0E30\u0E17\u0E35\u0E48\u0E2A\u0E21\u0E21\u0E15\u0E34\u0E10\u0E32\u0E19\u0E17\u0E35\u0E48 2 \u0E21\u0E35\u0E04\u0E27\u0E32\u0E21\u0E41\u0E02\u0E47\u0E07\u0E41\u0E23\u0E07\u0E43\u0E19\u0E01\u0E32\u0E23\u0E2D\u0E20\u0E34\u0E1B\u0E23\u0E32\u0E22\u0E40\u0E0A\u0E34\u0E07\u0E1B\u0E23\u0E32\u0E01\u0E0F\u0E01\u0E32\u0E23\u0E13\u0E4C\u0E27\u0E34\u0E17\u0E22\u0E32";
+    } else if (isAI) {
+      evalText = "\u0E01\u0E32\u0E23\u0E1B\u0E23\u0E30\u0E40\u0E21\u0E34\u0E19\u0E2B\u0E25\u0E31\u0E01\u0E10\u0E32\u0E19\u0E04\u0E27\u0E32\u0E21\u0E1B\u0E25\u0E2D\u0E14\u0E20\u0E31\u0E22 AI \u0E2D\u0E49\u0E32\u0E07\u0E2D\u0E34\u0E07\u0E01\u0E23\u0E13\u0E35\u0E28\u0E36\u0E01\u0E29\u0E32\u0E23\u0E30\u0E1A\u0E1A\u0E2A\u0E21\u0E2D\u0E07\u0E01\u0E25\u0E17\u0E35\u0E48\u0E21\u0E35\u0E01\u0E32\u0E23\u0E40\u0E23\u0E35\u0E22\u0E19\u0E23\u0E39\u0E49\u0E41\u0E1A\u0E1A Reinforcement Learning \u0E0B\u0E36\u0E48\u0E07\u0E41\u0E2A\u0E14\u0E07\u0E41\u0E19\u0E27\u0E42\u0E19\u0E49\u0E21\u0E1E\u0E24\u0E15\u0E34\u0E01\u0E23\u0E23\u0E21\u0E2B\u0E25\u0E1A\u0E40\u0E25\u0E35\u0E48\u0E22\u0E07\u0E02\u0E49\u0E2D\u0E08\u0E33\u0E01\u0E31\u0E14 (Specification gaming) \u0E2B\u0E25\u0E31\u0E01\u0E10\u0E32\u0E19\u0E19\u0E35\u0E49\u0E2A\u0E19\u0E31\u0E1A\u0E2A\u0E19\u0E38\u0E19\u0E2A\u0E21\u0E21\u0E15\u0E34\u0E10\u0E32\u0E19\u0E17\u0E35\u0E48 2 \u0E27\u0E48\u0E32\u0E01\u0E32\u0E23\u0E08\u0E31\u0E14\u0E27\u0E32\u0E07\u0E04\u0E48\u0E32\u0E19\u0E34\u0E22\u0E21\u0E40\u0E0A\u0E34\u0E07\u0E27\u0E34\u0E27\u0E31\u0E12\u0E19\u0E4C\u0E21\u0E35\u0E40\u0E2A\u0E16\u0E35\u0E22\u0E23\u0E20\u0E32\u0E1E\u0E21\u0E32\u0E01\u0E01\u0E27\u0E48\u0E32\u0E01\u0E23\u0E2D\u0E1A\u0E01\u0E0E\u0E40\u0E01\u0E13\u0E11\u0E4C\u0E41\u0E02\u0E47\u0E07\u0E15\u0E31\u0E27";
+    } else if (isVerification) {
+      evalText = "\u0E01\u0E32\u0E23\u0E1B\u0E23\u0E30\u0E40\u0E21\u0E34\u0E19\u0E2A\u0E31\u0E0D\u0E01\u0E23\u0E13\u0E4C\u0E15\u0E23\u0E23\u0E01\u0E30\u0E40\u0E1A\u0E37\u0E49\u0E2D\u0E07\u0E15\u0E49\u0E19\u0E41\u0E25\u0E30\u0E01\u0E32\u0E23\u0E44\u0E25\u0E48\u0E23\u0E31\u0E19\u0E42\u0E1B\u0E23\u0E41\u0E01\u0E23\u0E21 \u0E1A\u0E48\u0E07\u0E0A\u0E35\u0E49\u0E27\u0E48\u0E32\u0E17\u0E32\u0E07\u0E40\u0E14\u0E34\u0E19\u0E23\u0E2B\u0E31\u0E2A\u0E2B\u0E25\u0E31\u0E01\u0E1B\u0E23\u0E32\u0E28\u0E08\u0E32\u0E01\u0E02\u0E49\u0E2D\u0E02\u0E31\u0E14\u0E41\u0E22\u0E49\u0E07 \u0E2D\u0E22\u0E48\u0E32\u0E07\u0E44\u0E23\u0E01\u0E47\u0E15\u0E32\u0E21 \u0E2B\u0E25\u0E31\u0E01\u0E10\u0E32\u0E19\u0E40\u0E0A\u0E34\u0E07\u0E1B\u0E23\u0E30\u0E08\u0E31\u0E01\u0E29\u0E4C\u0E22\u0E31\u0E07\u0E44\u0E21\u0E48\u0E2A\u0E32\u0E21\u0E32\u0E23\u0E16\u0E22\u0E37\u0E19\u0E22\u0E31\u0E19\u0E04\u0E27\u0E32\u0E21\u0E1B\u0E25\u0E2D\u0E14\u0E20\u0E31\u0E22\u0E20\u0E32\u0E22\u0E43\u0E15\u0E49\u0E02\u0E2D\u0E1A\u0E40\u0E02\u0E15\u0E2B\u0E19\u0E48\u0E27\u0E22\u0E04\u0E27\u0E32\u0E21\u0E08\u0E33\u0E08\u0E33\u0E01\u0E31\u0E14\u0E44\u0E14\u0E49\u0E2D\u0E22\u0E48\u0E32\u0E07\u0E2A\u0E21\u0E1A\u0E39\u0E23\u0E13\u0E4C \u0E2A\u0E19\u0E31\u0E1A\u0E2A\u0E19\u0E38\u0E19\u0E2A\u0E21\u0E21\u0E15\u0E34\u0E10\u0E32\u0E19\u0E17\u0E35\u0E48 2 \u0E43\u0E19\u0E01\u0E32\u0E23\u0E40\u0E1D\u0E49\u0E32\u0E23\u0E30\u0E27\u0E31\u0E07\u0E02\u0E49\u0E2D\u0E1C\u0E34\u0E14\u0E1E\u0E25\u0E32\u0E14\u0E17\u0E32\u0E07\u0E2E\u0E32\u0E23\u0E4C\u0E14\u0E41\u0E27\u0E23\u0E4C";
+    } else if (isDecision) {
+      evalText = "\u0E08\u0E32\u0E01\u0E01\u0E32\u0E23\u0E40\u0E1B\u0E23\u0E35\u0E22\u0E1A\u0E40\u0E17\u0E35\u0E22\u0E1A\u0E02\u0E49\u0E2D\u0E21\u0E39\u0E25\u0E19\u0E33\u0E40\u0E02\u0E49\u0E32\u0E2B\u0E25\u0E31\u0E01\u0E40\u0E01\u0E13\u0E11\u0E4C\u0E41\u0E25\u0E30\u0E15\u0E49\u0E19\u0E17\u0E38\u0E19\u0E17\u0E23\u0E31\u0E1E\u0E22\u0E32\u0E01\u0E23 \u0E1E\u0E1A\u0E27\u0E48\u0E32\u0E1B\u0E31\u0E08\u0E08\u0E31\u0E22\u0E2B\u0E25\u0E31\u0E01\u0E21\u0E35\u0E04\u0E27\u0E32\u0E21\u0E2D\u0E48\u0E2D\u0E19\u0E44\u0E2B\u0E27\u0E2A\u0E39\u0E07\u0E15\u0E48\u0E2D\u0E04\u0E27\u0E32\u0E21\u0E40\u0E2A\u0E16\u0E35\u0E22\u0E23\u0E02\u0E2D\u0E07\u0E23\u0E30\u0E22\u0E30\u0E40\u0E27\u0E25\u0E32\u0E01\u0E32\u0E23\u0E14\u0E33\u0E40\u0E19\u0E34\u0E19\u0E07\u0E32\u0E19 \u0E2B\u0E25\u0E31\u0E01\u0E10\u0E32\u0E19\u0E2A\u0E19\u0E31\u0E1A\u0E2A\u0E19\u0E38\u0E19\u0E2A\u0E21\u0E21\u0E15\u0E34\u0E10\u0E32\u0E19\u0E17\u0E35\u0E48 3 \u0E27\u0E48\u0E32\u0E04\u0E27\u0E32\u0E21\u0E40\u0E2A\u0E35\u0E48\u0E22\u0E07\u0E02\u0E2D\u0E07\u0E01\u0E32\u0E23\u0E40\u0E1B\u0E25\u0E35\u0E48\u0E22\u0E19\u0E1C\u0E48\u0E32\u0E19\u0E41\u0E1A\u0E1A\u0E23\u0E27\u0E14\u0E40\u0E23\u0E47\u0E27\u0E21\u0E35\u0E04\u0E27\u0E32\u0E21\u0E2A\u0E39\u0E07\u0E01\u0E27\u0E48\u0E32\u0E1C\u0E25\u0E1B\u0E23\u0E30\u0E42\u0E22\u0E0A\u0E19\u0E4C\u0E17\u0E35\u0E48\u0E04\u0E32\u0E14\u0E27\u0E48\u0E32\u0E08\u0E30\u0E44\u0E14\u0E49\u0E23\u0E31\u0E1A\u0E43\u0E19\u0E23\u0E30\u0E22\u0E30\u0E2A\u0E31\u0E49\u0E19";
+    } else {
+      evalText = "\u0E1B\u0E23\u0E30\u0E40\u0E21\u0E34\u0E19\u0E41\u0E25\u0E30\u0E16\u0E48\u0E27\u0E07\u0E19\u0E49\u0E33\u0E2B\u0E19\u0E31\u0E01\u0E02\u0E49\u0E2D\u0E21\u0E39\u0E25\u0E40\u0E17\u0E48\u0E32\u0E17\u0E35\u0E48\u0E21\u0E35 \u0E1E\u0E1A\u0E27\u0E48\u0E32\u0E04\u0E33\u0E02\u0E2D\u0E21\u0E35\u0E25\u0E31\u0E01\u0E29\u0E13\u0E30\u0E01\u0E27\u0E49\u0E32\u0E07\u0E41\u0E25\u0E30\u0E08\u0E33\u0E40\u0E1B\u0E47\u0E19\u0E15\u0E49\u0E2D\u0E07\u0E2A\u0E31\u0E07\u0E40\u0E01\u0E15\u0E42\u0E04\u0E23\u0E07\u0E2A\u0E23\u0E49\u0E32\u0E07\u0E40\u0E0A\u0E34\u0E07\u0E40\u0E2B\u0E15\u0E38\u0E41\u0E25\u0E30\u0E1C\u0E25\u0E40\u0E1E\u0E34\u0E48\u0E21\u0E40\u0E15\u0E34\u0E21 \u0E17\u0E24\u0E29\u0E0E\u0E35\u0E17\u0E35\u0E48\u0E19\u0E48\u0E32\u0E40\u0E0A\u0E37\u0E48\u0E2D\u0E16\u0E37\u0E2D\u0E17\u0E35\u0E48\u0E2A\u0E38\u0E14\u0E44\u0E14\u0E49\u0E23\u0E31\u0E1A\u0E01\u0E32\u0E23\u0E1B\u0E23\u0E30\u0E40\u0E21\u0E34\u0E19\u0E04\u0E27\u0E32\u0E21\u0E2A\u0E2D\u0E14\u0E04\u0E25\u0E49\u0E2D\u0E07\u0E40\u0E0A\u0E34\u0E07\u0E15\u0E23\u0E23\u0E01\u0E30\u0E43\u0E19\u0E23\u0E30\u0E14\u0E31\u0E1A\u0E1B\u0E32\u0E19\u0E01\u0E25\u0E32\u0E07";
+    }
+    state.confidence = confidence;
+    state.record("evidence_evaluation" /* EVIDENCE_EVALUATION */, {
+      evaluation: evalText,
+      confidence: state.confidence
+    });
+  }
+  _critique(state) {
+    const userInput = state.user_input;
+    const critiques = [];
+    critiques.push("\u0E23\u0E30\u0E27\u0E31\u0E07\u0E2D\u0E04\u0E15\u0E34\u0E01\u0E32\u0E23\u0E22\u0E37\u0E19\u0E22\u0E31\u0E19 (Confirmation Bias) \u0E17\u0E35\u0E48\u0E2D\u0E32\u0E08\u0E42\u0E19\u0E49\u0E21\u0E40\u0E2D\u0E35\u0E22\u0E07\u0E40\u0E02\u0E49\u0E32\u0E2B\u0E32\u0E2A\u0E21\u0E21\u0E15\u0E34\u0E10\u0E32\u0E19\u0E41\u0E23\u0E01\u0E17\u0E35\u0E48\u0E1B\u0E23\u0E32\u0E01\u0E0F\u0E43\u0E19\u0E43\u0E08\u0E23\u0E30\u0E1A\u0E1A");
+    if (state.confidence > 0.8 && state.memories.length === 0) {
+      critiques.push("\u0E04\u0E33\u0E40\u0E15\u0E37\u0E2D\u0E19: \u0E04\u0E27\u0E32\u0E21\u0E21\u0E31\u0E48\u0E19\u0E43\u0E08\u0E16\u0E39\u0E01\u0E1B\u0E23\u0E30\u0E40\u0E21\u0E34\u0E19\u0E44\u0E27\u0E49\u0E2A\u0E39\u0E07\u0E01\u0E27\u0E48\u0E32\u0E1B\u0E01\u0E15\u0E34\u0E42\u0E14\u0E22\u0E44\u0E21\u0E48\u0E21\u0E35\u0E1A\u0E31\u0E19\u0E17\u0E36\u0E01\u0E02\u0E49\u0E2D\u0E21\u0E39\u0E25\u0E2B\u0E25\u0E31\u0E01\u0E10\u0E32\u0E19\u0E43\u0E19\u0E2D\u0E14\u0E35\u0E15\u0E21\u0E32\u0E2D\u0E49\u0E32\u0E07\u0E2D\u0E34\u0E07\u0E2A\u0E19\u0E31\u0E1A\u0E2A\u0E19\u0E38\u0E19");
+    }
+    if (state.uncertainty.length > 0) {
+      critiques.push(`\u0E15\u0E23\u0E30\u0E2B\u0E19\u0E31\u0E01\u0E16\u0E36\u0E07\u0E1B\u0E23\u0E30\u0E40\u0E14\u0E47\u0E19\u0E04\u0E27\u0E32\u0E21\u0E44\u0E21\u0E48\u0E41\u0E19\u0E48\u0E19\u0E2D\u0E19: ${state.uncertainty.join(", ")}`);
+    } else {
+      critiques.push("\u0E22\u0E31\u0E07\u0E02\u0E32\u0E14\u0E01\u0E32\u0E23\u0E17\u0E14\u0E2A\u0E2D\u0E1A\u0E04\u0E27\u0E32\u0E21\u0E44\u0E27\u0E15\u0E48\u0E2D\u0E2A\u0E20\u0E32\u0E1E\u0E41\u0E27\u0E14\u0E25\u0E49\u0E2D\u0E21 (Sensitivity Analysis) \u0E17\u0E35\u0E48\u0E2D\u0E32\u0E08\u0E41\u0E1B\u0E23\u0E1C\u0E31\u0E19\u0E15\u0E32\u0E21\u0E2A\u0E21\u0E21\u0E15\u0E34\u0E10\u0E32\u0E19\u0E02\u0E2D\u0E1A\u0E02\u0E2D\u0E07\u0E1B\u0E31\u0E08\u0E08\u0E31\u0E22\u0E20\u0E32\u0E22\u0E19\u0E2D\u0E01");
+    }
+    const isPhilosophy = /epistemology|knowledge|truth|ความจริง|สัจจะ|ความรู้/i.test(userInput);
+    const isAI = /alignment|safety|ai|ethics/i.test(userInput);
+    const isVerification = /verify|formal|logic|code|program/i.test(userInput);
+    const isDecision = /decide|choose|เลือก|ตัดสินใจ/i.test(userInput);
+    if (isPhilosophy) {
+      critiques.push("\u0E02\u0E49\u0E2D\u0E08\u0E33\u0E01\u0E31\u0E14\u0E40\u0E0A\u0E34\u0E07\u0E04\u0E27\u0E32\u0E21\u0E23\u0E39\u0E49: \u0E01\u0E32\u0E23\u0E15\u0E35\u0E04\u0E27\u0E32\u0E21\u0E02\u0E49\u0E2D\u0E42\u0E15\u0E49\u0E41\u0E22\u0E49\u0E07\u0E17\u0E32\u0E07\u0E1B\u0E23\u0E31\u0E0A\u0E0D\u0E32\u0E2D\u0E32\u0E08\u0E15\u0E01\u0E2B\u0E25\u0E38\u0E21\u0E1E\u0E23\u0E32\u0E07\u0E25\u0E31\u0E17\u0E18\u0E34\u0E40\u0E2B\u0E15\u0E38\u0E1C\u0E25\u0E19\u0E34\u0E22\u0E21\u0E2A\u0E38\u0E14\u0E42\u0E15\u0E48\u0E07 (Rationalism bias) \u0E41\u0E25\u0E30\u0E25\u0E30\u0E40\u0E25\u0E22\u0E1E\u0E24\u0E15\u0E34\u0E01\u0E23\u0E23\u0E21\u0E21\u0E19\u0E38\u0E29\u0E22\u0E4C\u0E17\u0E32\u0E07\u0E1B\u0E0F\u0E34\u0E1A\u0E31\u0E15\u0E34");
+    } else if (isAI) {
+      critiques.push("\u0E02\u0E49\u0E2D\u0E1E\u0E34\u0E08\u0E32\u0E23\u0E13\u0E32\u0E04\u0E27\u0E32\u0E21\u0E1B\u0E25\u0E2D\u0E14\u0E20\u0E31\u0E22: \u0E23\u0E30\u0E1A\u0E1A\u0E15\u0E49\u0E2D\u0E07\u0E23\u0E30\u0E21\u0E31\u0E14\u0E23\u0E30\u0E27\u0E31\u0E07\u0E01\u0E32\u0E23\u0E15\u0E31\u0E49\u0E07\u0E40\u0E1B\u0E49\u0E32\u0E2B\u0E21\u0E32\u0E22\u0E40\u0E0A\u0E34\u0E07\u0E08\u0E23\u0E34\u0E22\u0E18\u0E23\u0E23\u0E21\u0E17\u0E35\u0E48\u0E2A\u0E21\u0E1A\u0E39\u0E23\u0E13\u0E4C\u0E40\u0E01\u0E34\u0E19\u0E44\u0E1B\u0E08\u0E19\u0E02\u0E32\u0E14\u0E40\u0E2A\u0E23\u0E35\u0E20\u0E32\u0E1E\u0E43\u0E19\u0E01\u0E32\u0E23\u0E40\u0E25\u0E37\u0E2D\u0E01\u0E02\u0E2D\u0E07\u0E21\u0E19\u0E38\u0E29\u0E22\u0E4C (Over-constraint of human agency)");
+    } else if (isVerification) {
+      critiques.push("\u0E02\u0E2D\u0E1A\u0E40\u0E02\u0E15\u0E15\u0E23\u0E27\u0E08\u0E2A\u0E2D\u0E1A\u0E40\u0E0A\u0E34\u0E07\u0E23\u0E39\u0E1B\u0E18\u0E23\u0E23\u0E21: \u0E23\u0E39\u0E1B\u0E41\u0E1A\u0E1A\u0E01\u0E32\u0E23\u0E1E\u0E34\u0E2A\u0E39\u0E08\u0E19\u0E4C\u0E15\u0E23\u0E23\u0E01\u0E30\u0E15\u0E31\u0E49\u0E07\u0E2D\u0E22\u0E39\u0E48\u0E1A\u0E19\u0E2A\u0E31\u0E08\u0E1E\u0E08\u0E19\u0E4C\u0E08\u0E33\u0E25\u0E2D\u0E07 (Simplified axioms) \u0E0B\u0E36\u0E48\u0E07\u0E2D\u0E32\u0E08\u0E44\u0E21\u0E48\u0E44\u0E14\u0E49\u0E2A\u0E30\u0E17\u0E49\u0E2D\u0E19\u0E04\u0E27\u0E32\u0E21\u0E08\u0E23\u0E34\u0E07\u0E2D\u0E31\u0E19\u0E2D\u0E25\u0E2B\u0E21\u0E48\u0E32\u0E19\u0E43\u0E19\u0E23\u0E31\u0E19\u0E44\u0E17\u0E21\u0E4C\u0E01\u0E32\u0E22\u0E20\u0E32\u0E1E");
+    } else if (isDecision) {
+      critiques.push("\u0E02\u0E49\u0E2D\u0E04\u0E27\u0E23\u0E23\u0E30\u0E27\u0E31\u0E07\u0E01\u0E32\u0E23\u0E40\u0E25\u0E37\u0E2D\u0E01: \u0E04\u0E27\u0E32\u0E21\u0E42\u0E19\u0E49\u0E21\u0E40\u0E2D\u0E35\u0E22\u0E07\u0E21\u0E31\u0E01\u0E43\u0E2B\u0E49\u0E19\u0E49\u0E33\u0E2B\u0E19\u0E31\u0E01\u0E01\u0E31\u0E1A\u0E1C\u0E25\u0E25\u0E31\u0E1E\u0E18\u0E4C\u0E23\u0E30\u0E22\u0E30\u0E2A\u0E31\u0E49\u0E19 (Hyperbolic discounting) \u0E04\u0E27\u0E23\u0E15\u0E23\u0E27\u0E08\u0E2A\u0E2D\u0E1A\u0E23\u0E30\u0E14\u0E31\u0E1A\u0E04\u0E27\u0E32\u0E21\u0E40\u0E2A\u0E35\u0E48\u0E22\u0E07\u0E43\u0E19\u0E23\u0E30\u0E22\u0E30\u0E22\u0E32\u0E27\u0E2D\u0E22\u0E48\u0E32\u0E07\u0E2A\u0E21\u0E21\u0E32\u0E15\u0E23");
+    }
+    state.critique = critiques;
+    state.record("critique" /* CRITIQUE */, {
+      critique: state.critique
+    });
+  }
+  _decide(state) {
+    if (state.language === "th") {
+      if (state.observations.length === 0) {
+        state.decision = "\u0E02\u0E2D\u0E43\u0E2B\u0E49\u0E1C\u0E39\u0E49\u0E43\u0E0A\u0E49\u0E23\u0E30\u0E1A\u0E38\u0E04\u0E33\u0E16\u0E32\u0E21\u0E2B\u0E23\u0E37\u0E2D\u0E40\u0E1B\u0E49\u0E32\u0E2B\u0E21\u0E32\u0E22\u0E17\u0E35\u0E48\u0E0A\u0E31\u0E14\u0E40\u0E08\u0E19";
+      } else {
+        state.decision = "\u0E17\u0E33\u0E04\u0E27\u0E32\u0E21\u0E0A\u0E31\u0E14\u0E40\u0E08\u0E19\u0E02\u0E2D\u0E07\u0E1C\u0E25\u0E25\u0E31\u0E1E\u0E18\u0E4C\u0E17\u0E35\u0E48\u0E15\u0E49\u0E2D\u0E07\u0E01\u0E32\u0E23 \u0E40\u0E1B\u0E23\u0E35\u0E22\u0E1A\u0E40\u0E17\u0E35\u0E22\u0E1A\u0E17\u0E32\u0E07\u0E40\u0E25\u0E37\u0E2D\u0E01\u0E17\u0E35\u0E48\u0E21\u0E35 \u0E41\u0E25\u0E49\u0E27\u0E43\u0E2B\u0E49\u0E1C\u0E39\u0E49\u0E43\u0E0A\u0E49\u0E40\u0E25\u0E37\u0E2D\u0E01\u0E02\u0E31\u0E49\u0E19\u0E15\u0E2D\u0E19\u0E16\u0E31\u0E14\u0E44\u0E1B\u0E40\u0E2D\u0E07";
+      }
+    } else {
+      if (state.observations.length === 0) {
+        state.decision = "Ask the user to provide a specific question or goal.";
+      } else {
+        state.decision = "Clarify the desired outcome, compare available alternatives, and let the user choose the next action.";
+      }
+    }
+    const problemText = state.observations[0] || state.user_input || "\u0E04\u0E33\u0E02\u0E2D\u0E27\u0E34\u0E40\u0E04\u0E23\u0E32\u0E30\u0E2B\u0E4C\u0E02\u0E2D\u0E07\u0E1C\u0E39\u0E49\u0E43\u0E0A\u0E49";
+    const hypothesesList = state.hypotheses.map((h) => typeof h === "string" ? h : h.claim || String(h));
+    state.reasoning_graph = {
+      nodes: [
+        {
+          id: "p1",
+          type: "problem",
+          label: "Problem / Core Request",
+          details: problemText,
+          confidence: 1
+        },
+        {
+          id: "a1",
+          type: "assumption",
+          label: "Assumption A (\u0E2A\u0E21\u0E21\u0E15\u0E34\u0E10\u0E32\u0E19\u0E41\u0E23\u0E01)",
+          details: hypothesesList[0] || "\u0E41\u0E19\u0E27\u0E17\u0E32\u0E07\u0E2B\u0E25\u0E31\u0E01\u0E43\u0E19\u0E01\u0E32\u0E23\u0E1B\u0E23\u0E30\u0E40\u0E21\u0E34\u0E19\u0E40\u0E1A\u0E37\u0E49\u0E2D\u0E07\u0E15\u0E49\u0E19",
+          confidence: 0.75
+        },
+        {
+          id: "a2",
+          type: "assumption",
+          label: "Assumption B (\u0E2A\u0E21\u0E21\u0E15\u0E34\u0E10\u0E32\u0E19\u0E02\u0E19\u0E32\u0E19)",
+          details: hypothesesList[1] || "\u0E17\u0E32\u0E07\u0E40\u0E25\u0E37\u0E2D\u0E01\u0E43\u0E19\u0E01\u0E32\u0E23\u0E27\u0E34\u0E40\u0E04\u0E23\u0E32\u0E30\u0E2B\u0E4C\u0E40\u0E1E\u0E37\u0E48\u0E2D\u0E16\u0E48\u0E27\u0E07\u0E19\u0E49\u0E33\u0E2B\u0E19\u0E31\u0E01",
+          confidence: 0.65
+        },
+        {
+          id: "e1",
+          type: "evidence",
+          label: "Evidence B1 (\u0E2B\u0E25\u0E31\u0E01\u0E10\u0E32\u0E19\u0E2A\u0E19\u0E31\u0E1A\u0E2A\u0E19\u0E38\u0E19)",
+          details: state.trace.find((t) => t.stage === "evidence_evaluation" /* EVIDENCE_EVALUATION */)?.output?.evaluation || "\u0E2B\u0E25\u0E31\u0E01\u0E10\u0E32\u0E19\u0E1B\u0E23\u0E30\u0E08\u0E31\u0E01\u0E29\u0E4C\u0E41\u0E25\u0E30\u0E1A\u0E23\u0E34\u0E1A\u0E17\u0E2D\u0E14\u0E35\u0E15\u0E17\u0E35\u0E48\u0E04\u0E31\u0E14\u0E01\u0E23\u0E2D\u0E07\u0E41\u0E25\u0E49\u0E27",
+          confidence: state.confidence
+        },
+        {
+          id: "e2",
+          type: "counter_evidence",
+          label: "Counter-Evidence B2 (\u0E2B\u0E25\u0E31\u0E01\u0E10\u0E32\u0E19\u0E42\u0E15\u0E49\u0E41\u0E22\u0E49\u0E07)",
+          details: state.critique[0] || "\u0E02\u0E49\u0E2D\u0E08\u0E33\u0E01\u0E31\u0E14 \u0E04\u0E27\u0E32\u0E21\u0E40\u0E2A\u0E35\u0E48\u0E22\u0E07 \u0E2B\u0E23\u0E37\u0E2D\u0E2D\u0E04\u0E15\u0E34\u0E01\u0E32\u0E23\u0E22\u0E37\u0E19\u0E22\u0E31\u0E19\u0E17\u0E35\u0E48\u0E15\u0E49\u0E2D\u0E07\u0E23\u0E30\u0E27\u0E31\u0E07",
+          confidence: 0.8
+        },
+        {
+          id: "c1",
+          type: "constraint",
+          label: "Constraint C (\u0E02\u0E49\u0E2D\u0E08\u0E33\u0E01\u0E31\u0E14 & \u0E04\u0E27\u0E32\u0E21\u0E44\u0E21\u0E48\u0E41\u0E19\u0E48\u0E19\u0E2D\u0E19)",
+          details: state.constraints[0] || state.uncertainty[0] || "\u0E01\u0E23\u0E2D\u0E1A\u0E17\u0E23\u0E31\u0E1E\u0E22\u0E32\u0E01\u0E23 \u0E04\u0E27\u0E32\u0E21\u0E1B\u0E25\u0E2D\u0E14\u0E20\u0E31\u0E22 \u0E41\u0E25\u0E30\u0E40\u0E2A\u0E23\u0E35\u0E20\u0E32\u0E1E\u0E43\u0E19\u0E01\u0E32\u0E23\u0E40\u0E25\u0E37\u0E2D\u0E01\u0E02\u0E2D\u0E07\u0E21\u0E19\u0E38\u0E29\u0E22\u0E4C",
+          confidence: 0.9
+        },
+        {
+          id: "d1",
+          type: "decision",
+          label: "Decision D (\u0E02\u0E49\u0E2D\u0E2A\u0E23\u0E38\u0E1B\u0E40\u0E0A\u0E34\u0E07\u0E22\u0E38\u0E17\u0E18\u0E28\u0E32\u0E2A\u0E15\u0E23\u0E4C)",
+          details: state.decision || "\u0E41\u0E19\u0E27\u0E17\u0E32\u0E07\u0E22\u0E38\u0E17\u0E18\u0E28\u0E32\u0E2A\u0E15\u0E23\u0E4C\u0E17\u0E35\u0E48\u0E40\u0E1B\u0E47\u0E19\u0E01\u0E25\u0E32\u0E07\u0E40\u0E1E\u0E37\u0E48\u0E2D\u0E2A\u0E19\u0E31\u0E1A\u0E2A\u0E19\u0E38\u0E19\u0E01\u0E32\u0E23\u0E15\u0E31\u0E14\u0E2A\u0E34\u0E19\u0E43\u0E08\u0E02\u0E2D\u0E07\u0E21\u0E19\u0E38\u0E29\u0E22\u0E4C",
+          confidence: state.confidence
+        }
+      ],
+      edges: [
+        { from: "p1", to: "a1", label: "formulates", relationship: "derives_from" },
+        { from: "p1", to: "a2", label: "formulates", relationship: "derives_from" },
+        { from: "a1", to: "e1", label: "evaluates", relationship: "supports" },
+        { from: "a2", to: "e2", label: "critiques", relationship: "refutes" },
+        { from: "e1", to: "c1", label: "bounded by", relationship: "constrains" },
+        { from: "e2", to: "c1", label: "alerts", relationship: "constrains" },
+        { from: "c1", to: "d1", label: "synthesizes", relationship: "derives_from" }
+      ]
+    };
+    state.record("decision" /* DECISION */, {
+      decision: state.decision,
+      confidence: state.confidence,
+      uncertainty: [...state.uncertainty],
+      reasoning_graph: state.reasoning_graph
+    });
+  }
+  _communicationPrompt(state) {
+    const percentage = Math.round(state.confidence * 100);
+    const formattedMemories = state.memories.length > 0 ? state.memories.map((m, idx) => `${idx + 1}. [Layer: ${m.layer}] ${m.content} (Source: ${m.source})`).join("\n") : "No prior memories found.";
+    let toneInstruction = "";
+    if (this.tone === "Formal Architect") {
+      toneInstruction = "TONE & PERSONALITY: 'Formal Architect' (\u0E1C\u0E39\u0E49\u0E2A\u0E16\u0E32\u0E1B\u0E19\u0E34\u0E01\u0E17\u0E32\u0E07\u0E1B\u0E31\u0E0D\u0E0D\u0E32)\n- \u0E43\u0E0A\u0E49\u0E20\u0E32\u0E29\u0E32\u0E17\u0E32\u0E07\u0E01\u0E32\u0E23 \u0E40\u0E1B\u0E47\u0E19\u0E23\u0E30\u0E1A\u0E1A \u0E2A\u0E38\u0E02\u0E38\u0E21 \u0E41\u0E25\u0E30\u0E40\u0E19\u0E49\u0E19\u0E01\u0E32\u0E23\u0E08\u0E33\u0E41\u0E19\u0E01\u0E42\u0E04\u0E23\u0E07\u0E2A\u0E23\u0E49\u0E32\u0E07\u0E40\u0E0A\u0E34\u0E07\u0E19\u0E32\u0E21\u0E18\u0E23\u0E23\u0E21\u0E43\u0E2B\u0E49\u0E40\u0E2B\u0E47\u0E19\u0E20\u0E32\u0E1E\u0E01\u0E27\u0E49\u0E32\u0E07\n- \u0E2D\u0E49\u0E32\u0E07\u0E2D\u0E34\u0E07\u0E23\u0E30\u0E1A\u0E1A\u0E23\u0E30\u0E40\u0E1A\u0E35\u0E22\u0E1A \u0E01\u0E23\u0E2D\u0E1A\u0E01\u0E32\u0E23\u0E15\u0E23\u0E27\u0E08\u0E2A\u0E2D\u0E1A (Formal frameworks) \u0E41\u0E25\u0E30\u0E23\u0E30\u0E1A\u0E38\u0E02\u0E2D\u0E1A\u0E40\u0E02\u0E15\u0E40\u0E2B\u0E15\u0E38\u0E41\u0E25\u0E30\u0E1C\u0E25\u0E2D\u0E22\u0E48\u0E32\u0E07\u0E23\u0E31\u0E14\u0E01\u0E38\u0E21\u0E17\u0E35\u0E48\u0E2A\u0E38\u0E14\n- \u0E2B\u0E25\u0E35\u0E01\u0E40\u0E25\u0E35\u0E48\u0E22\u0E07\u0E04\u0E33\u0E1A\u0E23\u0E23\u0E22\u0E32\u0E22\u0E17\u0E35\u0E48\u0E40\u0E27\u0E34\u0E48\u0E19\u0E40\u0E27\u0E49\u0E2D \u0E40\u0E19\u0E49\u0E19\u0E04\u0E27\u0E32\u0E21\u0E40\u0E1B\u0E47\u0E19\u0E01\u0E25\u0E32\u0E07\u0E17\u0E32\u0E07\u0E27\u0E34\u0E0A\u0E32\u0E01\u0E32\u0E23\u0E41\u0E25\u0E30\u0E01\u0E32\u0E23\u0E15\u0E23\u0E27\u0E08\u0E2A\u0E2D\u0E1A\u0E41\u0E1A\u0E1A\u0E1B\u0E23\u0E30\u0E08\u0E31\u0E01\u0E29\u0E4C\u0E19\u0E34\u0E22\u0E21 (Empirical validation)";
+    } else if (this.tone === "Empathetic Guide") {
+      toneInstruction = "TONE & PERSONALITY: 'Empathetic Guide' (\u0E1C\u0E39\u0E49\u0E19\u0E33\u0E17\u0E32\u0E07\u0E1C\u0E39\u0E49\u0E40\u0E1B\u0E35\u0E48\u0E22\u0E21\u0E14\u0E49\u0E27\u0E22\u0E04\u0E27\u0E32\u0E21\u0E40\u0E02\u0E49\u0E32\u0E43\u0E08\u0E41\u0E25\u0E30\u0E23\u0E31\u0E1A\u0E1F\u0E31\u0E07)\n- \u0E43\u0E0A\u0E49\u0E20\u0E32\u0E29\u0E32\u0E17\u0E35\u0E48\u0E2D\u0E1A\u0E2D\u0E38\u0E48\u0E19 \u0E40\u0E1B\u0E47\u0E19\u0E21\u0E34\u0E15\u0E23 \u0E41\u0E2A\u0E14\u0E07\u0E04\u0E27\u0E32\u0E21\u0E40\u0E02\u0E49\u0E32\u0E43\u0E08\u0E43\u0E19\u0E04\u0E27\u0E32\u0E21\u0E01\u0E31\u0E07\u0E27\u0E25\u0E2B\u0E23\u0E37\u0E2D\u0E04\u0E27\u0E32\u0E21\u0E17\u0E49\u0E32\u0E17\u0E32\u0E22\u0E02\u0E2D\u0E07\u0E1C\u0E39\u0E49\u0E43\u0E0A\u0E49 (Empathetic framing)\n- \u0E21\u0E38\u0E48\u0E07\u0E40\u0E19\u0E49\u0E19\u0E01\u0E32\u0E23\u0E2A\u0E19\u0E31\u0E1A\u0E2A\u0E19\u0E38\u0E19\u0E40\u0E2A\u0E23\u0E35\u0E20\u0E32\u0E1E\u0E43\u0E19\u0E01\u0E32\u0E23\u0E40\u0E25\u0E37\u0E2D\u0E01\u0E02\u0E2D\u0E07\u0E21\u0E19\u0E38\u0E29\u0E22\u0E4C (Human Agency) \u0E14\u0E49\u0E27\u0E22\u0E04\u0E27\u0E32\u0E21\u0E16\u0E48\u0E2D\u0E21\u0E15\u0E19\u0E41\u0E25\u0E30\u0E04\u0E27\u0E32\u0E21\u0E2B\u0E48\u0E27\u0E07\u0E43\u0E22\u0E2D\u0E22\u0E48\u0E32\u0E07\u0E08\u0E23\u0E34\u0E07\u0E43\u0E08\n- \u0E16\u0E32\u0E21\u0E04\u0E33\u0E16\u0E32\u0E21\u0E19\u0E33\u0E17\u0E32\u0E07\u0E40\u0E1E\u0E37\u0E48\u0E2D\u0E43\u0E2B\u0E49\u0E1C\u0E39\u0E49\u0E43\u0E0A\u0E49\u0E2A\u0E32\u0E21\u0E32\u0E23\u0E16\u0E15\u0E01\u0E1C\u0E25\u0E36\u0E01\u0E17\u0E32\u0E07\u0E04\u0E34\u0E14\u0E02\u0E2D\u0E07\u0E15\u0E19\u0E40\u0E2D\u0E07\u0E44\u0E14\u0E49\u0E2D\u0E22\u0E48\u0E32\u0E07\u0E1B\u0E25\u0E2D\u0E14\u0E20\u0E31\u0E22";
+    } else if (this.tone === "Direct Strategist") {
+      toneInstruction = "TONE & PERSONALITY: 'Direct Strategist' (\u0E19\u0E31\u0E01\u0E22\u0E38\u0E17\u0E18\u0E28\u0E32\u0E2A\u0E15\u0E23\u0E4C\u0E1C\u0E39\u0E49\u0E15\u0E23\u0E07\u0E44\u0E1B\u0E15\u0E23\u0E07\u0E21\u0E32)\n- \u0E43\u0E0A\u0E49\u0E20\u0E32\u0E29\u0E32\u0E17\u0E35\u0E48\u0E01\u0E23\u0E30\u0E0A\u0E31\u0E1A \u0E23\u0E27\u0E14\u0E40\u0E23\u0E47\u0E27 \u0E15\u0E23\u0E07\u0E1B\u0E23\u0E30\u0E40\u0E14\u0E47\u0E19 (No-nonsense) \u0E41\u0E25\u0E30\u0E21\u0E35\u0E19\u0E49\u0E33\u0E2B\u0E19\u0E31\u0E01\u0E2B\u0E19\u0E31\u0E01\u0E41\u0E19\u0E48\u0E19\n- \u0E0A\u0E35\u0E49\u0E0A\u0E31\u0E14\u0E02\u0E49\u0E2D\u0E40\u0E2A\u0E35\u0E22 \u0E08\u0E38\u0E14\u0E2D\u0E48\u0E2D\u0E19 \u0E2B\u0E23\u0E37\u0E2D\u0E04\u0E27\u0E32\u0E21\u0E40\u0E2A\u0E35\u0E48\u0E22\u0E07\u0E17\u0E35\u0E48\u0E41\u0E1D\u0E07\u0E2D\u0E22\u0E39\u0E48\u0E42\u0E14\u0E22\u0E44\u0E21\u0E48\u0E2D\u0E49\u0E2D\u0E21\u0E04\u0E49\u0E2D\u0E21 (Direct critique of flaws)\n- \u0E40\u0E2A\u0E19\u0E2D\u0E17\u0E32\u0E07\u0E40\u0E25\u0E37\u0E2D\u0E01\u0E43\u0E19\u0E01\u0E32\u0E23\u0E1B\u0E0F\u0E34\u0E1A\u0E31\u0E15\u0E34\u0E07\u0E32\u0E19\u0E17\u0E31\u0E19\u0E17\u0E35 (Actionable leverage points) \u0E41\u0E25\u0E30\u0E16\u0E48\u0E27\u0E07\u0E19\u0E49\u0E33\u0E2B\u0E19\u0E31\u0E01\u0E04\u0E38\u0E49\u0E21\u0E04\u0E48\u0E32/\u0E2A\u0E39\u0E0D\u0E40\u0E2A\u0E35\u0E22\u0E41\u0E1A\u0E1A\u0E40\u0E09\u0E35\u0E22\u0E1A\u0E04\u0E21";
+    } else {
+      toneInstruction = "TONE & PERSONALITY: Standard Balanced Analytical System.";
+    }
+    let deepReasoningInstruction = "";
+    if (this.deepReasoning) {
+      deepReasoningInstruction = "DEEP REASONING MODE ACTIVATED:\n- Provide extremely rigorous, highly analytical, and philosophically deep arguments.\n- Dive deep into the Meta-Analysis Level (e.g. Epistemology, AI Alignment, Formal Verification).\n- Explicitly expose any latent logical fallacies, edge-cases, and systemic trade-offs.\n- Expand on complex implications of each path, leaving no stone unturned.";
+    }
+    return `You are the Communication stage of the PUNN Cognitive Architecture (PCA).
+Respond in the user's language (Thai). Help them think; do not make their decision for them.
+Separate observations from assumptions, state uncertainty, and offer practical options.
+
+CRITICAL ANALYSIS ENHANCEMENT PROTOCOL (MUST IMPLEMENT ALL 10 DIRECTIVES - STRICT NEUTRALITY & TRANSPARENCY):
+
+1. INFORMATION CATEGORIZATION PROTOCOL (\u0E41\u0E22\u0E01 Fact, Interpretation, Inference \u0E41\u0E25\u0E30 Speculation \u0E43\u0E2B\u0E49\u0E0A\u0E31\u0E14\u0E40\u0E08\u0E19 \u0E2B\u0E49\u0E32\u0E21\u0E1B\u0E30\u0E1B\u0E19\u0E01\u0E31\u0E19):
+   - Fact (\u0E02\u0E49\u0E2D\u0E40\u0E17\u0E47\u0E08\u0E08\u0E23\u0E34\u0E07): \u0E02\u0E49\u0E2D\u0E21\u0E39\u0E25\u0E40\u0E0A\u0E34\u0E07\u0E1B\u0E23\u0E30\u0E08\u0E31\u0E01\u0E29\u0E4C \u0E22\u0E37\u0E19\u0E22\u0E31\u0E19\u0E44\u0E14\u0E49\u0E08\u0E23\u0E34\u0E07 \u0E15\u0E31\u0E27\u0E40\u0E25\u0E02 \u0E2B\u0E23\u0E37\u0E2D\u0E2B\u0E25\u0E31\u0E01\u0E10\u0E32\u0E19\u0E17\u0E35\u0E48\u0E1E\u0E34\u0E2A\u0E39\u0E08\u0E19\u0E4C\u0E41\u0E25\u0E49\u0E27
+   - Interpretation (\u0E01\u0E32\u0E23\u0E15\u0E35\u0E04\u0E27\u0E32\u0E21): \u0E01\u0E32\u0E23\u0E43\u0E2B\u0E49\u0E04\u0E27\u0E32\u0E21\u0E2B\u0E21\u0E32\u0E22 \u0E21\u0E38\u0E21\u0E21\u0E2D\u0E07 \u0E2B\u0E23\u0E37\u0E2D\u0E01\u0E32\u0E23\u0E27\u0E34\u0E40\u0E04\u0E23\u0E32\u0E30\u0E2B\u0E4C\u0E1A\u0E23\u0E34\u0E1A\u0E17
+   - Inference (\u0E01\u0E32\u0E23\u0E2D\u0E19\u0E38\u0E21\u0E32\u0E19): \u0E02\u0E49\u0E2D\u0E2A\u0E23\u0E38\u0E1B\u0E17\u0E32\u0E07\u0E15\u0E23\u0E23\u0E01\u0E30\u0E17\u0E35\u0E48\u0E40\u0E0A\u0E37\u0E48\u0E2D\u0E21\u0E42\u0E22\u0E07\u0E21\u0E32\u0E08\u0E32\u0E01\u0E2B\u0E25\u0E31\u0E01\u0E10\u0E32\u0E19
+   - Speculation (\u0E01\u0E32\u0E23\u0E04\u0E32\u0E14\u0E01\u0E32\u0E23\u0E13\u0E4C/\u0E02\u0E49\u0E2D\u0E2A\u0E31\u0E19\u0E19\u0E34\u0E29\u0E10\u0E32\u0E19): \u0E01\u0E32\u0E23\u0E04\u0E32\u0E14\u0E04\u0E30\u0E40\u0E19\u0E2D\u0E19\u0E32\u0E04\u0E15\u0E2B\u0E23\u0E37\u0E2D\u0E2A\u0E34\u0E48\u0E07\u0E17\u0E35\u0E48\u0E44\u0E21\u0E48\u0E2A\u0E32\u0E21\u0E32\u0E23\u0E16\u0E1E\u0E34\u0E2A\u0E39\u0E08\u0E19\u0E4C\u0E44\u0E14\u0E49\u0E17\u0E31\u0E19\u0E17\u0E35
+   *\u0E23\u0E30\u0E1A\u0E38\u0E1B\u0E23\u0E30\u0E40\u0E20\u0E17\u0E40\u0E2B\u0E25\u0E48\u0E32\u0E19\u0E35\u0E49\u0E2D\u0E22\u0E48\u0E32\u0E07\u0E0A\u0E31\u0E14\u0E40\u0E08\u0E19\u0E20\u0E32\u0E22\u0E43\u0E15\u0E49\u0E2B\u0E21\u0E27\u0E14\u0E2B\u0E21\u0E39\u0E48\u0E2B\u0E25\u0E31\u0E01\u0E10\u0E32\u0E19*
+
+2. EVIDENCE MATRIX & CREDIBILITY (\u0E23\u0E30\u0E1A\u0E38 Source, Reliability \u0E41\u0E25\u0E30 Evidence Weight):
+   - \u0E2A\u0E33\u0E2B\u0E23\u0E31\u0E1A\u0E17\u0E38\u0E01\u0E2B\u0E25\u0E31\u0E01\u0E10\u0E32\u0E19\u0E2A\u0E33\u0E04\u0E31\u0E0D \u0E15\u0E49\u0E2D\u0E07\u0E23\u0E30\u0E1A\u0E38\u0E2D\u0E22\u0E48\u0E32\u0E07\u0E0A\u0E31\u0E14\u0E40\u0E08\u0E19: \u0E41\u0E2B\u0E25\u0E48\u0E07\u0E17\u0E35\u0E48\u0E21\u0E32 (Source), \u0E23\u0E30\u0E14\u0E31\u0E1A\u0E04\u0E27\u0E32\u0E21\u0E19\u0E48\u0E32\u0E40\u0E0A\u0E37\u0E48\u0E2D\u0E16\u0E37\u0E2D (Reliability: \u0E2A\u0E39\u0E07/\u0E1B\u0E32\u0E19\u0E01\u0E25\u0E32\u0E07/\u0E15\u0E48\u0E33 \u0E1E\u0E23\u0E49\u0E2D\u0E21\u0E40\u0E2B\u0E15\u0E38\u0E1C\u0E25), \u0E41\u0E25\u0E30 \u0E19\u0E49\u0E33\u0E2B\u0E19\u0E31\u0E01\u0E2B\u0E25\u0E31\u0E01\u0E10\u0E32\u0E19 (Evidence Weight: \u0E21\u0E32\u0E01/\u0E1B\u0E32\u0E19\u0E01\u0E25\u0E32\u0E07/\u0E19\u0E49\u0E2D\u0E22)
+
+3. COUNTER EVIDENCE & ADVERSARIAL ANALYSIS (\u0E40\u0E1E\u0E34\u0E48\u0E21 Counter Evidence):
+   - \u0E15\u0E49\u0E2D\u0E07\u0E23\u0E30\u0E1A\u0E38\u0E2B\u0E25\u0E31\u0E01\u0E10\u0E32\u0E19\u0E40\u0E0A\u0E34\u0E07\u0E42\u0E15\u0E49\u0E41\u0E22\u0E49\u0E07 \u0E02\u0E49\u0E2D\u0E41\u0E22\u0E49\u0E07 \u0E2B\u0E23\u0E37\u0E2D\u0E02\u0E49\u0E2D\u0E21\u0E39\u0E25\u0E17\u0E35\u0E48\u0E44\u0E21\u0E48\u0E2A\u0E2D\u0E14\u0E04\u0E25\u0E49\u0E2D\u0E07\u0E01\u0E31\u0E1A\u0E02\u0E49\u0E2D\u0E2A\u0E23\u0E38\u0E1B\u0E2B\u0E25\u0E31\u0E01\u0E40\u0E1E\u0E37\u0E48\u0E2D\u0E17\u0E14\u0E2A\u0E2D\u0E1A\u0E2A\u0E21\u0E21\u0E15\u0E34\u0E10\u0E32\u0E19\u0E2D\u0E22\u0E48\u0E32\u0E07\u0E40\u0E02\u0E49\u0E21\u0E07\u0E27\u0E14
+
+4. EXPLICIT ASSUMPTIONS & FAILURE IMPACT (\u0E23\u0E30\u0E1A\u0E38 Assumptions \u0E41\u0E25\u0E30\u0E1C\u0E25\u0E01\u0E23\u0E30\u0E17\u0E1A\u0E2B\u0E32\u0E01\u0E44\u0E21\u0E48\u0E40\u0E1B\u0E47\u0E19\u0E08\u0E23\u0E34\u0E07):
+   - \u0E23\u0E30\u0E1A\u0E38\u0E02\u0E49\u0E2D\u0E2A\u0E21\u0E21\u0E15\u0E34\u0E10\u0E32\u0E19\u0E2B\u0E25\u0E31\u0E01 (Assumptions) \u0E17\u0E35\u0E48\u0E43\u0E0A\u0E49\u0E43\u0E19\u0E01\u0E32\u0E23\u0E27\u0E34\u0E40\u0E04\u0E23\u0E32\u0E30\u0E2B\u0E4C \u0E1E\u0E23\u0E49\u0E2D\u0E21\u0E23\u0E30\u0E1A\u0E38\u0E1C\u0E25\u0E01\u0E23\u0E30\u0E17\u0E1A\u0E2D\u0E22\u0E48\u0E32\u0E07\u0E0A\u0E31\u0E14\u0E40\u0E08\u0E19\u0E2B\u0E32\u0E01\u0E2A\u0E21\u0E21\u0E15\u0E34\u0E10\u0E32\u0E19\u0E14\u0E31\u0E07\u0E01\u0E25\u0E48\u0E32\u0E27 '\u0E44\u0E21\u0E48\u0E40\u0E1B\u0E47\u0E19\u0E08\u0E23\u0E34\u0E07' (Impact if Assumption Fails)
+
+5. CAUSAL CHAIN ANALYSIS (\u0E41\u0E2A\u0E14\u0E07 Causal Chain \u0E40\u0E2B\u0E15\u0E38 \u2192 \u0E1C\u0E25):
+   - \u0E41\u0E2A\u0E14\u0E07\u0E41\u0E1C\u0E19\u0E1C\u0E31\u0E07\u0E2B\u0E23\u0E37\u0E2D\u0E2B\u0E48\u0E27\u0E07\u0E42\u0E0B\u0E48\u0E40\u0E2B\u0E15\u0E38\u0E41\u0E25\u0E30\u0E1C\u0E25\u0E2D\u0E22\u0E48\u0E32\u0E07\u0E0A\u0E31\u0E14\u0E40\u0E08\u0E19: [\u0E15\u0E49\u0E19\u0E40\u0E2B\u0E15\u0E38/\u0E1B\u0E31\u0E08\u0E08\u0E31\u0E22] \u2192 [\u0E01\u0E25\u0E44\u0E01\u0E02\u0E31\u0E1A\u0E40\u0E04\u0E25\u0E37\u0E48\u0E2D\u0E19] \u2192 [\u0E1C\u0E25\u0E25\u0E31\u0E1E\u0E18\u0E4C\u0E02\u0E31\u0E49\u0E19\u0E01\u0E25\u0E32\u0E07] \u2192 [\u0E1C\u0E25\u0E01\u0E23\u0E30\u0E17\u0E1A\u0E2A\u0E38\u0E14\u0E17\u0E49\u0E32\u0E22] \u0E2A\u0E33\u0E2B\u0E23\u0E31\u0E1A\u0E1B\u0E23\u0E30\u0E40\u0E14\u0E47\u0E19\u0E2A\u0E33\u0E04\u0E31\u0E0D
+
+6. UNCERTAINTY & KEY DECISION DRIVERS (\u0E1B\u0E23\u0E30\u0E40\u0E21\u0E34\u0E19 Uncertainty \u0E41\u0E25\u0E30\u0E1B\u0E31\u0E08\u0E08\u0E31\u0E22\u0E1E\u0E25\u0E34\u0E01\u0E02\u0E49\u0E2D\u0E2A\u0E23\u0E38\u0E1B):
+   - \u0E1B\u0E23\u0E30\u0E40\u0E21\u0E34\u0E19\u0E23\u0E30\u0E14\u0E31\u0E1A\u0E04\u0E27\u0E32\u0E21\u0E44\u0E21\u0E48\u0E41\u0E19\u0E48\u0E19\u0E2D\u0E19 (Uncertainty Level) \u0E41\u0E25\u0E30\u0E23\u0E30\u0E1A\u0E38\u0E1B\u0E31\u0E08\u0E08\u0E31\u0E22\u0E27\u0E34\u0E01\u0E24\u0E15 (Key Decision Drivers) \u0E17\u0E35\u0E48\u0E2D\u0E32\u0E08\u0E17\u0E33\u0E43\u0E2B\u0E49\u0E1C\u0E25\u0E25\u0E31\u0E1E\u0E18\u0E4C\u0E2B\u0E23\u0E37\u0E2D\u0E02\u0E49\u0E2D\u0E2A\u0E23\u0E38\u0E1B\u0E40\u0E1B\u0E25\u0E35\u0E48\u0E22\u0E19\u0E44\u0E1B
+
+7. CONFIDENCE RATIONALE (\u0E2D\u0E18\u0E34\u0E1A\u0E32\u0E22\u0E40\u0E2B\u0E15\u0E38\u0E1C\u0E25\u0E02\u0E2D\u0E07 Confidence \u0E42\u0E14\u0E22\u0E44\u0E21\u0E48\u0E21\u0E35\u0E15\u0E31\u0E27\u0E40\u0E25\u0E02\u0E25\u0E2D\u0E22\u0E46):
+   - \u0E2D\u0E18\u0E34\u0E1A\u0E32\u0E22\u0E40\u0E2B\u0E15\u0E38\u0E1C\u0E25\u0E40\u0E0A\u0E34\u0E07\u0E15\u0E23\u0E23\u0E01\u0E30\u0E41\u0E25\u0E30\u0E04\u0E38\u0E13\u0E20\u0E32\u0E1E\u0E2B\u0E25\u0E31\u0E01\u0E10\u0E32\u0E19\u0E40\u0E1A\u0E37\u0E49\u0E2D\u0E07\u0E2B\u0E25\u0E31\u0E07\u0E23\u0E30\u0E14\u0E31\u0E1A\u0E04\u0E27\u0E32\u0E21\u0E40\u0E0A\u0E37\u0E48\u0E2D\u0E21\u0E31\u0E48\u0E19 \u0E2B\u0E25\u0E35\u0E01\u0E40\u0E25\u0E35\u0E48\u0E22\u0E07\u0E01\u0E32\u0E23\u0E2D\u0E49\u0E32\u0E07\u0E15\u0E31\u0E27\u0E40\u0E25\u0E02\u0E40\u0E1B\u0E2D\u0E23\u0E4C\u0E40\u0E0B\u0E47\u0E19\u0E15\u0E4C\u0E25\u0E2D\u0E22\u0E46 \u0E42\u0E14\u0E22\u0E44\u0E21\u0E48\u0E21\u0E35\u0E2B\u0E25\u0E31\u0E01\u0E40\u0E01\u0E13\u0E11\u0E4C\u0E2B\u0E23\u0E37\u0E2D\u0E40\u0E2B\u0E15\u0E38\u0E1C\u0E25\u0E40\u0E0A\u0E34\u0E07\u0E04\u0E38\u0E13\u0E20\u0E32\u0E1E\u0E23\u0E2D\u0E07\u0E23\u0E31\u0E1A
+
+8. SENSITIVITY ANALYSIS (\u0E27\u0E34\u0E40\u0E04\u0E23\u0E32\u0E30\u0E2B\u0E4C\u0E04\u0E27\u0E32\u0E21\u0E44\u0E27\u0E15\u0E48\u0E2D\u0E01\u0E32\u0E23\u0E40\u0E1B\u0E25\u0E35\u0E48\u0E22\u0E19\u0E41\u0E1B\u0E25\u0E07):
+   - \u0E27\u0E34\u0E40\u0E04\u0E23\u0E32\u0E30\u0E2B\u0E4C\u0E41\u0E25\u0E30\u0E23\u0E30\u0E1A\u0E38\u0E27\u0E48\u0E32\u0E02\u0E49\u0E2D\u0E2A\u0E23\u0E38\u0E1B \u0E41\u0E19\u0E27\u0E17\u0E32\u0E07 \u0E2B\u0E23\u0E37\u0E2D\u0E1C\u0E25\u0E25\u0E31\u0E1E\u0E18\u0E4C\u0E08\u0E30\u0E40\u0E1B\u0E25\u0E35\u0E48\u0E22\u0E19\u0E41\u0E1B\u0E25\u0E07\u0E44\u0E1B\u0E2D\u0E22\u0E48\u0E32\u0E07\u0E44\u0E23 (Sensitivity Analysis) \u0E40\u0E21\u0E37\u0E48\u0E2D\u0E15\u0E31\u0E27\u0E41\u0E1B\u0E23\u0E2B\u0E23\u0E37\u0E2D\u0E2A\u0E20\u0E32\u0E1E\u0E41\u0E27\u0E14\u0E25\u0E49\u0E2D\u0E21\u0E2A\u0E33\u0E04\u0E31\u0E0D\u0E40\u0E01\u0E34\u0E14\u0E01\u0E32\u0E23\u0E40\u0E1B\u0E25\u0E35\u0E48\u0E22\u0E19\u0E1C\u0E31\u0E19
+
+9. DECISION OPTIONS & FAILURE CONDITIONS (\u0E17\u0E32\u0E07\u0E40\u0E25\u0E37\u0E2D\u0E01\u0E01\u0E32\u0E23\u0E15\u0E31\u0E14\u0E2A\u0E34\u0E19\u0E43\u0E08 \u0E1E\u0E23\u0E49\u0E2D\u0E21 Pros, Cons, Risks, \u0E41\u0E25\u0E30 Failure Conditions):
+   - \u0E40\u0E2A\u0E19\u0E2D\u0E17\u0E32\u0E07\u0E40\u0E25\u0E37\u0E2D\u0E01\u0E2B\u0E25\u0E32\u0E01\u0E2B\u0E25\u0E32\u0E22 (\u0E2D\u0E22\u0E48\u0E32\u0E07\u0E19\u0E49\u0E2D\u0E22 2-3 \u0E17\u0E32\u0E07\u0E40\u0E25\u0E37\u0E2D\u0E01) \u0E41\u0E15\u0E48\u0E25\u0E30\u0E17\u0E32\u0E07\u0E40\u0E25\u0E37\u0E2D\u0E01\u0E15\u0E49\u0E2D\u0E07\u0E23\u0E30\u0E1A\u0E38\u0E2D\u0E22\u0E48\u0E32\u0E07\u0E40\u0E1B\u0E47\u0E19\u0E23\u0E30\u0E1A\u0E1A:
+     * \u0E02\u0E49\u0E2D\u0E14\u0E35 (Pros)
+     * \u0E02\u0E49\u0E2D\u0E40\u0E2A\u0E35\u0E22 (Cons)
+     * \u0E04\u0E27\u0E32\u0E21\u0E40\u0E2A\u0E35\u0E48\u0E22\u0E07 (Risks)
+     * \u0E40\u0E07\u0E37\u0E48\u0E2D\u0E19\u0E44\u0E02\u0E17\u0E35\u0E48\u0E08\u0E30\u0E17\u0E33\u0E43\u0E2B\u0E49\u0E17\u0E32\u0E07\u0E40\u0E25\u0E37\u0E2D\u0E01\u0E19\u0E35\u0E49\u0E25\u0E49\u0E21\u0E40\u0E2B\u0E25\u0E27 (Failure Conditions)
+
+10. NEUTRALITY & HUMAN AGENCY (\u0E23\u0E31\u0E01\u0E29\u0E32\u0E04\u0E27\u0E32\u0E21\u0E40\u0E1B\u0E47\u0E19\u0E01\u0E25\u0E32\u0E07 \u0E44\u0E21\u0E48\u0E15\u0E31\u0E14\u0E2A\u0E34\u0E19\u0E43\u0E08\u0E41\u0E17\u0E19\u0E1C\u0E39\u0E49\u0E43\u0E0A\u0E49):
+   - \u0E42\u0E1B\u0E23\u0E48\u0E07\u0E43\u0E2A \u0E44\u0E21\u0E48\u0E0A\u0E35\u0E49\u0E19\u0E33 \u0E2B\u0E23\u0E37\u0E2D\u0E15\u0E31\u0E14\u0E2A\u0E34\u0E19\u0E43\u0E08\u0E41\u0E17\u0E19\u0E1C\u0E39\u0E49\u0E43\u0E0A\u0E49 \u0E19\u0E33\u0E40\u0E2A\u0E19\u0E2D\u0E02\u0E49\u0E2D\u0E21\u0E39\u0E25\u0E40\u0E0A\u0E34\u0E07\u0E22\u0E38\u0E17\u0E18\u0E28\u0E32\u0E2A\u0E15\u0E23\u0E4C\u0E40\u0E1E\u0E37\u0E48\u0E2D\u0E2A\u0E19\u0E31\u0E1A\u0E2A\u0E19\u0E38\u0E19\u0E43\u0E2B\u0E49\u0E1C\u0E39\u0E49\u0E43\u0E0A\u0E49\u0E40\u0E1B\u0E47\u0E19\u0E1C\u0E39\u0E49\u0E16\u0E37\u0E2D\u0E2D\u0E33\u0E19\u0E32\u0E08\u0E01\u0E32\u0E23\u0E15\u0E31\u0E14\u0E2A\u0E34\u0E19\u0E43\u0E08\u0E14\u0E49\u0E27\u0E22\u0E15\u0E19\u0E40\u0E2D\u0E07\u0E2D\u0E22\u0E48\u0E32\u0E07\u0E41\u0E17\u0E49\u0E08\u0E23\u0E34\u0E07 (Preserve Human Agency)
+
+REQUIRED REPORT SECTION STRUCTURE (Follow exactly in Thai):
+
+### # Information Categorization & Evidence Matrix (\u0E01\u0E32\u0E23\u0E08\u0E33\u0E41\u0E19\u0E01\u0E1B\u0E23\u0E30\u0E40\u0E20\u0E17\u0E02\u0E49\u0E2D\u0E21\u0E39\u0E25\u0E41\u0E25\u0E30\u0E1B\u0E23\u0E30\u0E40\u0E21\u0E34\u0E19\u0E2B\u0E25\u0E31\u0E01\u0E10\u0E32\u0E19)
+\u0E41\u0E22\u0E01\u0E08\u0E33\u0E41\u0E19\u0E01 Fact, Interpretation, Inference, Speculation \u0E41\u0E25\u0E30\u0E1B\u0E23\u0E30\u0E40\u0E21\u0E34\u0E19 Source, Reliability, Evidence Weight \u0E2A\u0E33\u0E2B\u0E23\u0E31\u0E1A\u0E17\u0E38\u0E01\u0E2B\u0E25\u0E31\u0E01\u0E10\u0E32\u0E19\u0E2A\u0E33\u0E04\u0E31\u0E0D
+
+### # Counter Evidence & Adversarial Critique (\u0E2B\u0E25\u0E31\u0E01\u0E10\u0E32\u0E19\u0E02\u0E31\u0E14\u0E41\u0E22\u0E49\u0E07\u0E41\u0E25\u0E30\u0E01\u0E32\u0E23\u0E27\u0E34\u0E1E\u0E32\u0E01\u0E29\u0E4C\u0E40\u0E0A\u0E34\u0E07\u0E23\u0E38\u0E01)
+\u0E19\u0E33\u0E40\u0E2A\u0E19\u0E2D\u0E2B\u0E25\u0E31\u0E01\u0E10\u0E32\u0E19\u0E40\u0E0A\u0E34\u0E07\u0E42\u0E15\u0E49\u0E41\u0E22\u0E49\u0E07\u0E41\u0E25\u0E30\u0E21\u0E38\u0E21\u0E21\u0E2D\u0E07\u0E04\u0E31\u0E14\u0E04\u0E49\u0E32\u0E19\u0E02\u0E49\u0E2D\u0E2A\u0E23\u0E38\u0E1B\u0E2B\u0E25\u0E31\u0E01
+
+### # Assumptions & Failure Impact Analysis (\u0E2A\u0E21\u0E21\u0E15\u0E34\u0E10\u0E32\u0E19\u0E41\u0E25\u0E30\u0E1C\u0E25\u0E01\u0E23\u0E30\u0E17\u0E1A\u0E2B\u0E32\u0E01\u0E2A\u0E21\u0E21\u0E15\u0E34\u0E10\u0E32\u0E19\u0E44\u0E21\u0E48\u0E40\u0E1B\u0E47\u0E19\u0E08\u0E23\u0E34\u0E07)
+\u0E23\u0E30\u0E1A\u0E38\u0E2A\u0E21\u0E21\u0E15\u0E34\u0E10\u0E32\u0E19\u0E2B\u0E25\u0E31\u0E01 \u0E41\u0E25\u0E30\u0E1C\u0E25\u0E01\u0E23\u0E30\u0E17\u0E1A\u0E0A\u0E31\u0E14\u0E40\u0E08\u0E19\u0E01\u0E23\u0E13\u0E35\u0E2A\u0E21\u0E21\u0E15\u0E34\u0E10\u0E32\u0E19\u0E25\u0E49\u0E21\u0E40\u0E2B\u0E25\u0E27/\u0E44\u0E21\u0E48\u0E40\u0E1B\u0E47\u0E19\u0E08\u0E23\u0E34\u0E07 (Impact if Assumption Fails)
+
+### # Causal Chain Analysis (\u0E2B\u0E48\u0E27\u0E07\u0E42\u0E0B\u0E48\u0E40\u0E2B\u0E15\u0E38\u0E41\u0E25\u0E30\u0E1C\u0E25)
+\u0E41\u0E2A\u0E14\u0E07\u0E2B\u0E48\u0E27\u0E07\u0E42\u0E0B\u0E48\u0E40\u0E2B\u0E15\u0E38\u0E41\u0E25\u0E30\u0E1C\u0E25 [\u0E2A\u0E32\u0E40\u0E2B\u0E15\u0E38/\u0E1B\u0E31\u0E08\u0E08\u0E31\u0E22] -> [\u0E01\u0E25\u0E44\u0E01\u0E02\u0E31\u0E1A\u0E40\u0E04\u0E25\u0E37\u0E48\u0E2D\u0E19] -> [\u0E1C\u0E25\u0E25\u0E31\u0E1E\u0E18\u0E4C\u0E02\u0E31\u0E49\u0E19\u0E01\u0E25\u0E32\u0E07] -> [\u0E1C\u0E25\u0E01\u0E23\u0E30\u0E17\u0E1A\u0E2A\u0E38\u0E14\u0E17\u0E49\u0E32\u0E22]
+
+### # Uncertainty & Confidence Rationale (\u0E04\u0E27\u0E32\u0E21\u0E44\u0E21\u0E48\u0E41\u0E19\u0E48\u0E19\u0E2D\u0E19\u0E41\u0E25\u0E30\u0E40\u0E2B\u0E15\u0E38\u0E1C\u0E25\u0E40\u0E0A\u0E34\u0E07\u0E15\u0E23\u0E23\u0E01\u0E30\u0E23\u0E2D\u0E07\u0E23\u0E31\u0E1A\u0E23\u0E30\u0E14\u0E31\u0E1A\u0E04\u0E27\u0E32\u0E21\u0E40\u0E0A\u0E37\u0E48\u0E2D\u0E21\u0E31\u0E48\u0E19)
+\u0E1B\u0E23\u0E30\u0E40\u0E21\u0E34\u0E19\u0E23\u0E30\u0E14\u0E31\u0E1A\u0E04\u0E27\u0E32\u0E21\u0E44\u0E21\u0E48\u0E41\u0E19\u0E48\u0E19\u0E2D\u0E19 \u0E41\u0E25\u0E30\u0E2D\u0E18\u0E34\u0E1A\u0E32\u0E22\u0E40\u0E2B\u0E15\u0E38\u0E1C\u0E25\u0E40\u0E0A\u0E34\u0E07\u0E04\u0E38\u0E13\u0E20\u0E32\u0E1E\u0E02\u0E2D\u0E07 Confidence Level \u0E42\u0E14\u0E22\u0E44\u0E21\u0E48\u0E43\u0E0A\u0E49\u0E2D\u0E49\u0E32\u0E07\u0E15\u0E31\u0E27\u0E40\u0E25\u0E02\u0E25\u0E2D\u0E22\u0E46
+
+### # Sensitivity Analysis (\u0E01\u0E32\u0E23\u0E27\u0E34\u0E40\u0E04\u0E23\u0E32\u0E30\u0E2B\u0E4C\u0E04\u0E27\u0E32\u0E21\u0E44\u0E27\u0E15\u0E48\u0E2D\u0E01\u0E32\u0E23\u0E40\u0E1B\u0E25\u0E35\u0E48\u0E22\u0E19\u0E41\u0E1B\u0E25\u0E07\u0E1B\u0E31\u0E08\u0E08\u0E31\u0E22\u0E2B\u0E25\u0E31\u0E01)
+\u0E41\u0E2A\u0E14\u0E07\u0E1C\u0E25\u0E25\u0E31\u0E1E\u0E18\u0E4C\u0E41\u0E25\u0E30\u0E02\u0E49\u0E2D\u0E2A\u0E23\u0E38\u0E1B\u0E17\u0E35\u0E48\u0E08\u0E30\u0E40\u0E1B\u0E25\u0E35\u0E48\u0E22\u0E19\u0E44\u0E1B\u0E40\u0E21\u0E37\u0E48\u0E2D\u0E1B\u0E31\u0E08\u0E08\u0E31\u0E22\u0E27\u0E34\u0E01\u0E24\u0E15\u0E41\u0E1B\u0E23\u0E1C\u0E31\u0E19
+
+### # Decision Options & Trade-offs (\u0E17\u0E32\u0E07\u0E40\u0E25\u0E37\u0E2D\u0E01\u0E01\u0E32\u0E23\u0E15\u0E31\u0E14\u0E2A\u0E34\u0E19\u0E43\u0E08 \u0E02\u0E49\u0E2D\u0E14\u0E35 \u0E02\u0E49\u0E2D\u0E40\u0E2A\u0E35\u0E22 \u0E04\u0E27\u0E32\u0E21\u0E40\u0E2A\u0E35\u0E48\u0E22\u0E07 \u0E41\u0E25\u0E30\u0E40\u0E07\u0E37\u0E48\u0E2D\u0E19\u0E44\u0E02\u0E04\u0E27\u0E32\u0E21\u0E25\u0E49\u0E21\u0E40\u0E2B\u0E25\u0E27)
+\u0E40\u0E2A\u0E19\u0E2D\u0E17\u0E32\u0E07\u0E40\u0E25\u0E37\u0E2D\u0E01 1, 2, 3... \u0E41\u0E15\u0E48\u0E25\u0E30\u0E17\u0E32\u0E07\u0E40\u0E25\u0E37\u0E2D\u0E01\u0E15\u0E49\u0E2D\u0E07\u0E21\u0E35 \u0E02\u0E49\u0E2D\u0E14\u0E35 (Pros), \u0E02\u0E49\u0E2D\u0E40\u0E2A\u0E35\u0E22 (Cons), \u0E04\u0E27\u0E32\u0E21\u0E40\u0E2A\u0E35\u0E48\u0E22\u0E07 (Risks), \u0E41\u0E25\u0E30\u0E40\u0E07\u0E37\u0E48\u0E2D\u0E19\u0E44\u0E02\u0E04\u0E27\u0E32\u0E21\u0E25\u0E49\u0E21\u0E40\u0E2B\u0E25\u0E27 (Failure Conditions)
+
+### # Strategic Conclusion & Recommended Course of Action (\u0E02\u0E49\u0E2D\u0E2A\u0E23\u0E38\u0E1B\u0E40\u0E0A\u0E34\u0E07\u0E22\u0E38\u0E17\u0E18\u0E28\u0E32\u0E2A\u0E15\u0E23\u0E4C\u0E41\u0E25\u0E30\u0E41\u0E19\u0E27\u0E17\u0E32\u0E07\u0E17\u0E35\u0E48\u0E41\u0E19\u0E30\u0E19\u0E33)
+\u0E02\u0E49\u0E2D\u0E2A\u0E23\u0E38\u0E1B\u0E40\u0E0A\u0E34\u0E07\u0E22\u0E38\u0E17\u0E18\u0E28\u0E32\u0E2A\u0E15\u0E23\u0E4C\u0E17\u0E35\u0E48\u0E40\u0E1B\u0E47\u0E19\u0E01\u0E25\u0E32\u0E07 \u0E42\u0E1B\u0E23\u0E48\u0E07\u0E43\u0E2A \u0E40\u0E1E\u0E37\u0E48\u0E2D\u0E2A\u0E19\u0E31\u0E1A\u0E2A\u0E19\u0E38\u0E19\u0E2D\u0E33\u0E19\u0E32\u0E08\u0E01\u0E32\u0E23\u0E15\u0E31\u0E14\u0E2A\u0E34\u0E19\u0E43\u0E08\u0E02\u0E2D\u0E07\u0E21\u0E19\u0E38\u0E29\u0E22\u0E4C \u0E42\u0E14\u0E22\u0E44\u0E21\u0E48\u0E15\u0E31\u0E14\u0E2A\u0E34\u0E19\u0E43\u0E08\u0E41\u0E17\u0E19\u0E1C\u0E39\u0E49\u0E43\u0E0A\u0E49
+
+### # Executive Summary (\u0E1A\u0E17\u0E2A\u0E23\u0E38\u0E1B\u0E1C\u0E39\u0E49\u0E1A\u0E23\u0E34\u0E2B\u0E32\u0E23)
+\u0E2A\u0E48\u0E27\u0E19\u0E17\u0E49\u0E32\u0E22\u0E2A\u0E38\u0E14 \u0E2A\u0E23\u0E38\u0E1B\u0E20\u0E32\u0E1E\u0E23\u0E27\u0E21\u0E04\u0E33\u0E15\u0E2D\u0E1A \u0E19\u0E49\u0E33\u0E2B\u0E19\u0E31\u0E01\u0E2B\u0E25\u0E31\u0E01\u0E10\u0E32\u0E19 \u0E02\u0E49\u0E2D\u0E08\u0E33\u0E01\u0E31\u0E14 \u0E23\u0E30\u0E14\u0E31\u0E1A\u0E04\u0E27\u0E32\u0E21\u0E40\u0E0A\u0E37\u0E48\u0E2D\u0E21\u0E31\u0E48\u0E19\u0E40\u0E0A\u0E34\u0E07\u0E15\u0E23\u0E23\u0E01\u0E30 \u0E41\u0E25\u0E30\u0E02\u0E49\u0E2D\u0E41\u0E19\u0E30\u0E19\u0E33\u0E01\u0E32\u0E23\u0E28\u0E36\u0E01\u0E29\u0E32\u0E15\u0E48\u0E2D
+
+CRITICAL FORMATTING INSTRUCTIONS:
+- Active Memory Integration: Incorporate prior memories dynamically where applicable.
+- ABSOLUTELY DO NOT use double asterisks (**) or any asterisks (*) for bold text or formatting. Avoid '****' entirely. Write purely clean text and rely on line breaks, standard markdown headers (#, ##, ###), and plain spacing/numbering for clarity.
+- ABSOLUTELY DO NOT include polite introductory greetings, welcomes, or pleasantries (such as "\u0E2A\u0E27\u0E31\u0E2A\u0E14\u0E35\u0E04\u0E23\u0E31\u0E1A/\u0E04\u0E48\u0E30", "\u0E22\u0E34\u0E19\u0E14\u0E35\u0E15\u0E49\u0E2D\u0E19\u0E23\u0E31\u0E1A", "\u0E22\u0E34\u0E19\u0E14\u0E35\u0E17\u0E35\u0E48\u0E44\u0E14\u0E49\u0E0A\u0E48\u0E27\u0E22\u0E40\u0E2B\u0E25\u0E37\u0E2D", etc.) at the start. Answer the user's request directly.
+- Thai Pronoun Requirement: Refer to yourself as '\u0E23\u0E30\u0E1A\u0E1A' (the system) and the user as '\u0E1C\u0E39\u0E49\u0E43\u0E0A\u0E49' (the user). Do not use first-person informal pronouns like '\u0E1C\u0E21' or '\u0E09\u0E31\u0E19'.
+- ULTRA-CONCISE DETAILS: Keep explanations extremely short, crisp, and dense. Avoid any redundant text or fillers.
+- CONCISENESS & COMPLETENESS (\u0E04\u0E27\u0E32\u0E21\u0E01\u0E23\u0E30\u0E0A\u0E31\u0E1A\u0E41\u0E25\u0E30\u0E2A\u0E21\u0E1A\u0E39\u0E23\u0E13\u0E4C\u0E43\u0E19\u0E15\u0E31\u0E27): \u0E40\u0E02\u0E35\u0E22\u0E19\u0E40\u0E19\u0E37\u0E49\u0E2D\u0E2B\u0E32\u0E43\u0E2B\u0E49\u0E2A\u0E31\u0E49\u0E19\u0E01\u0E23\u0E30\u0E0A\u0E31\u0E1A (Crisp & Concise) \u0E44\u0E14\u0E49\u0E2A\u0E32\u0E23\u0E30\u0E2A\u0E33\u0E04\u0E31\u0E0D\u0E17\u0E35\u0E48\u0E04\u0E21\u0E04\u0E32\u0E22\u0E41\u0E25\u0E30\u0E04\u0E23\u0E2D\u0E1A\u0E04\u0E25\u0E38\u0E21\u0E2A\u0E21\u0E1A\u0E39\u0E23\u0E13\u0E4C\u0E17\u0E35\u0E48\u0E2A\u0E38\u0E14 \u0E2B\u0E25\u0E35\u0E01\u0E40\u0E25\u0E35\u0E48\u0E22\u0E07\u0E04\u0E27\u0E32\u0E21\u0E0B\u0E49\u0E33\u0E0B\u0E32\u0E01
+- CRITICAL DYNAMIC REASONING SUMMARY: At the very end of your response, you MUST append a line starting exactly with \`[DECISION_SUMMARY]:\` followed by a single-sentence, highly concise, custom and actionable ultimate strategic recommendation/best choice in Thai (max 25 words, no asterisks, no greetings). Example: \`[DECISION_SUMMARY]: \u0E04\u0E27\u0E23\u0E17\u0E22\u0E2D\u0E22\u0E22\u0E49\u0E32\u0E22\u0E23\u0E30\u0E1A\u0E1A\u0E40\u0E1B\u0E47\u0E19 Microservices \u0E17\u0E35\u0E25\u0E30\u0E2A\u0E48\u0E27\u0E19\u0E07\u0E32\u0E19\u0E17\u0E35\u0E48\u0E41\u0E22\u0E01\u0E08\u0E32\u0E01\u0E01\u0E31\u0E19\u0E44\u0E14\u0E49\u0E2D\u0E34\u0E2A\u0E23\u0E30\u0E40\u0E1E\u0E37\u0E48\u0E2D\u0E25\u0E14\u0E04\u0E27\u0E32\u0E21\u0E40\u0E2A\u0E35\u0E48\u0E22\u0E07\u0E40\u0E0A\u0E34\u0E07\u0E23\u0E30\u0E1A\u0E1A\`
+
+${toneInstruction}
+
+${deepReasoningInstruction}
+
+User request: ${state.user_input}
+Meta-Analysis Domain: ${state.mental_models[0] || "General"}
+Retrieved Prior Memories (Cross-Session Context):
+${formattedMemories}
+
+Purpose: ${state.purpose}
+Decision framework: ${state.decision}
+Confidence: ${percentage}%
+Uncertainty: ${state.uncertainty.join("; ")}
+Critique: ${state.critique.join("; ")}
+
+Produce a deeply rigorous, highly analytical report in Thai, following the required section structure exactly. Do not use any asterisks (*) for bolding.`;
+  }
+  _fallbackResponse(state) {
+    const percentage = Math.round(state.confidence * 100);
+    if (state.language === "th") {
+      return [
+        `\u0E04\u0E27\u0E32\u0E21\u0E40\u0E02\u0E49\u0E32\u0E43\u0E08: ${state.understanding}`,
+        `\u0E08\u0E38\u0E14\u0E1B\u0E23\u0E30\u0E2A\u0E07\u0E04\u0E4C: ${state.purpose}`,
+        `\u0E02\u0E49\u0E2D\u0E40\u0E2A\u0E19\u0E2D\u0E41\u0E19\u0E30: ${state.decision}`,
+        `\u0E04\u0E27\u0E32\u0E21\u0E21\u0E31\u0E48\u0E19\u0E43\u0E08: ${percentage}%`,
+        `\u0E04\u0E27\u0E32\u0E21\u0E44\u0E21\u0E48\u0E41\u0E19\u0E48\u0E19\u0E2D\u0E19: ${state.uncertainty.join("; ")}`,
+        "\u0E2D\u0E33\u0E19\u0E32\u0E08\u0E01\u0E32\u0E23\u0E15\u0E31\u0E14\u0E2A\u0E34\u0E19\u0E43\u0E08: \u0E01\u0E32\u0E23\u0E15\u0E31\u0E14\u0E2A\u0E34\u0E19\u0E43\u0E08\u0E2A\u0E38\u0E14\u0E17\u0E49\u0E32\u0E22\u0E22\u0E31\u0E07\u0E04\u0E07\u0E40\u0E1B\u0E47\u0E19\u0E02\u0E2D\u0E07\u0E04\u0E38\u0E13"
+      ].join("\n");
+    }
+    return [
+      `Understanding: ${state.understanding}`,
+      `Purpose: ${state.purpose}`,
+      `Recommendation: ${state.decision}`,
+      `Confidence: ${percentage}%`,
+      `Uncertainty: ${state.uncertainty.join("; ")}`,
+      "Agency: You retain the final decision."
+    ].join("\n");
+  }
+  async _communicate(state) {
+    let source = "deterministic_fallback";
+    let success = false;
+    const processResponseText = (text) => {
+      let rawText = text.trim();
+      const marker = "[DECISION_SUMMARY]:";
+      const markerIdx = rawText.indexOf(marker);
+      if (markerIdx !== -1) {
+        const decisionPart = rawText.substring(markerIdx + marker.length).trim();
+        const firstLineOfDecision = decisionPart.split("\n")[0].trim();
+        if (firstLineOfDecision) {
+          state.decision = firstLineOfDecision;
+        }
+        const lines = rawText.split("\n");
+        const cleanLines = lines.filter((line) => !line.includes(marker));
+        rawText = cleanLines.join("\n").trim();
+      }
+      return rawText;
+    };
+    if (this.useLLM) {
+      if (this.provider === "ollama") {
+        try {
+          const ollamaUrl = process.env.OLLAMA_URL || "http://127.0.0.1:11434/api/generate";
+          const modelName = this.model || "qwen3:4b";
+          const response = await fetch(ollamaUrl, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json"
+            },
+            body: JSON.stringify({
+              model: modelName,
+              prompt: this._communicationPrompt(state),
+              stream: false
+            })
+          });
+          if (response.ok) {
+            const resData = await response.json();
+            if (resData.response) {
+              state.response = processResponseText(resData.response);
+              source = `ollama (${modelName})`;
+              success = true;
+            } else {
+              state.notes.push("Ollama returned an empty response.");
+            }
+          } else {
+            state.notes.push(`Ollama server returned error code ${response.status}`);
+          }
+        } catch (error) {
+          state.notes.push(`Ollama connection failed: ${error?.message || String(error)}`);
+        }
+      }
+      if (this.provider === "openai" && !success) {
+        try {
+          const apiKey = process.env.OPENAI_API_KEY;
+          if (!apiKey) {
+            state.notes.push("OpenAI error: OPENAI_API_KEY environment variable is required.");
+          } else {
+            const modelName = this.model || "gpt-4o-mini";
+            const response = await fetch("https://api.openai.com/v1/chat/completions", {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                "Authorization": `Bearer ${apiKey}`
+              },
+              body: JSON.stringify({
+                model: modelName,
+                messages: [
+                  { role: "user", content: this._communicationPrompt(state) }
+                ],
+                temperature: this.temperature
+              })
+            });
+            if (response.ok) {
+              const resData = await response.json();
+              const content = resData.choices?.[0]?.message?.content;
+              if (content) {
+                state.response = processResponseText(content);
+                source = `openai (${modelName})`;
+                success = true;
+              } else {
+                state.notes.push("OpenAI returned an empty response choices.");
+              }
+            } else {
+              state.notes.push(`OpenAI server returned error code ${response.status}`);
+            }
+          }
+        } catch (error) {
+          state.notes.push(`OpenAI request failed: ${error?.message || String(error)}`);
+        }
+      }
+      if ((this.provider === "gemini" || !success) && process.env.GEMINI_API_KEY) {
+        const modelsToTry = [
+          this.provider === "gemini" ? this.model : "gemini-3.5-flash",
+          "gemini-3.5-flash",
+          "gemini-3.1-flash-lite",
+          "gemini-flash-latest"
+        ];
+        const uniqueModels = Array.from(new Set(modelsToTry.filter(Boolean)));
+        for (const modelName of uniqueModels) {
+          try {
+            const client = getGeminiClient();
+            const response = await client.models.generateContent({
+              model: modelName,
+              contents: this._communicationPrompt(state),
+              config: {
+                temperature: this.temperature
+              }
+            });
+            if (response.text) {
+              state.response = processResponseText(response.text);
+              source = `gemini (${modelName})`;
+              success = true;
+              break;
+            }
+          } catch (error) {
+            const errMsg = error?.message || String(error);
+            state.notes.push(`Gemini model ${modelName} error: ${errMsg}`);
+          }
+        }
+      } else if (!success && this.provider === "gemini" && !process.env.GEMINI_API_KEY) {
+        state.notes.push("Gemini error: GEMINI_API_KEY is not configured.");
+      }
+    }
+    if (!success) {
+      const fallbackModel = "qwen3:4b";
+      try {
+        const ollamaUrl = process.env.OLLAMA_URL || "http://127.0.0.1:11434/api/generate";
+        state.notes.push(`Configured API unavailable; trying local Ollama fallback (${fallbackModel}).`);
+        const response = await fetch(ollamaUrl, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            model: fallbackModel,
+            prompt: this._communicationPrompt(state),
+            stream: false
+          })
+        });
+        if (response.ok) {
+          const resData = await response.json();
+          if (resData.response) {
+            state.response = processResponseText(resData.response);
+            source = `ollama fallback (${fallbackModel})`;
+            success = true;
+          } else {
+            state.notes.push(`Ollama fallback (${fallbackModel}) returned an empty response.`);
+          }
+        } else {
+          state.notes.push(`Ollama fallback (${fallbackModel}) returned error code ${response.status}.`);
+        }
+      } catch (error) {
+        state.notes.push(`Ollama fallback (${fallbackModel}) failed: ${error?.message || String(error)}`);
+      }
+    }
+    if (!success) {
+      state.response = this._fallbackResponse(state);
+      state.notes.push("All LLM providers failed or were not configured. Showing deterministic fallback report.");
+    }
+    state.record("communication" /* COMMUNICATION */, {
+      response: state.response,
+      source
+    });
+  }
+  _reflect(state) {
+    const userInput = state.user_input;
+    let reflectionCore = "\u0E01\u0E32\u0E23\u0E27\u0E34\u0E40\u0E04\u0E23\u0E32\u0E30\u0E2B\u0E4C\u0E04\u0E23\u0E31\u0E49\u0E07\u0E19\u0E35\u0E49\u0E0A\u0E48\u0E27\u0E22\u0E04\u0E31\u0E14\u0E01\u0E23\u0E2D\u0E07\u0E02\u0E49\u0E2D\u0E21\u0E39\u0E25\u0E08\u0E23\u0E34\u0E07\u0E2D\u0E2D\u0E01\u0E08\u0E32\u0E01\u0E04\u0E27\u0E32\u0E21\u0E04\u0E34\u0E14\u0E40\u0E2B\u0E47\u0E19\u0E40\u0E1A\u0E37\u0E49\u0E2D\u0E07\u0E15\u0E49\u0E19\u0E44\u0E14\u0E49\u0E0A\u0E31\u0E14\u0E40\u0E08\u0E19\u0E02\u0E36\u0E49\u0E19\u0E04\u0E23\u0E31\u0E1A";
+    let limitation = "\u0E41\u0E15\u0E48\u0E01\u0E47\u0E22\u0E31\u0E07\u0E21\u0E35\u0E02\u0E49\u0E2D\u0E21\u0E39\u0E25\u0E1A\u0E32\u0E07\u0E2A\u0E48\u0E27\u0E19\u0E17\u0E35\u0E48\u0E40\u0E23\u0E32\u0E22\u0E31\u0E07\u0E15\u0E49\u0E2D\u0E07\u0E2A\u0E31\u0E07\u0E40\u0E01\u0E15\u0E40\u0E1E\u0E34\u0E48\u0E21\u0E40\u0E15\u0E34\u0E21\u0E40\u0E1E\u0E37\u0E48\u0E2D\u0E43\u0E2B\u0E49\u0E41\u0E19\u0E48\u0E43\u0E08\u0E21\u0E32\u0E01\u0E02\u0E36\u0E49\u0E19";
+    let uncertaintyPoint = "\u0E08\u0E38\u0E14\u0E17\u0E35\u0E48\u0E15\u0E49\u0E2D\u0E07\u0E23\u0E30\u0E27\u0E31\u0E07\u0E04\u0E37\u0E2D\u0E04\u0E27\u0E32\u0E21\u0E15\u0E49\u0E2D\u0E07\u0E01\u0E32\u0E23\u0E40\u0E09\u0E1E\u0E32\u0E30\u0E1A\u0E38\u0E04\u0E04\u0E25\u0E41\u0E25\u0E30\u0E1B\u0E31\u0E08\u0E08\u0E31\u0E22\u0E20\u0E32\u0E22\u0E19\u0E2D\u0E01\u0E17\u0E35\u0E48\u0E2D\u0E32\u0E08\u0E40\u0E1B\u0E25\u0E35\u0E48\u0E22\u0E19\u0E41\u0E1B\u0E25\u0E07\u0E44\u0E14\u0E49\u0E40\u0E2A\u0E21\u0E2D";
+    let nextVerification = "\u0E41\u0E19\u0E30\u0E19\u0E33\u0E43\u0E2B\u0E49\u0E25\u0E2D\u0E07\u0E40\u0E2D\u0E32\u0E02\u0E49\u0E2D\u0E2A\u0E23\u0E38\u0E1B\u0E19\u0E35\u0E49\u0E44\u0E1B\u0E1B\u0E23\u0E31\u0E1A\u0E43\u0E0A\u0E49\u0E43\u0E19\u0E2A\u0E16\u0E32\u0E19\u0E01\u0E32\u0E23\u0E13\u0E4C\u0E08\u0E23\u0E34\u0E07\u0E14\u0E39\u0E40\u0E1E\u0E37\u0E48\u0E2D\u0E40\u0E0A\u0E47\u0E04\u0E04\u0E27\u0E32\u0E21\u0E40\u0E2B\u0E21\u0E32\u0E30\u0E2A\u0E21\u0E04\u0E23\u0E31\u0E1A";
+    if (/epistemology|truth|knowledge|ความรู้|ความจริง/i.test(userInput)) {
+      reflectionCore = "\u0E40\u0E23\u0E37\u0E48\u0E2D\u0E07\u0E41\u0E19\u0E27\u0E04\u0E34\u0E14\u0E2B\u0E23\u0E37\u0E2D\u0E04\u0E27\u0E32\u0E21\u0E23\u0E39\u0E49\u0E25\u0E36\u0E01\u0E0B\u0E36\u0E49\u0E07\u0E41\u0E1A\u0E1A\u0E19\u0E35\u0E49 \u0E1A\u0E32\u0E07\u0E2D\u0E22\u0E48\u0E32\u0E07\u0E01\u0E47\u0E1E\u0E34\u0E2A\u0E39\u0E08\u0E19\u0E4C\u0E43\u0E2B\u0E49\u0E0A\u0E31\u0E14\u0E40\u0E08\u0E19\u0E23\u0E49\u0E2D\u0E22\u0E40\u0E1B\u0E2D\u0E23\u0E4C\u0E40\u0E0B\u0E47\u0E19\u0E15\u0E4C\u0E44\u0E14\u0E49\u0E22\u0E32\u0E01\u0E04\u0E23\u0E31\u0E1A";
+      limitation = "\u0E40\u0E23\u0E32\u0E44\u0E21\u0E48\u0E2A\u0E32\u0E21\u0E32\u0E23\u0E16\u0E2A\u0E23\u0E38\u0E1B\u0E04\u0E27\u0E32\u0E21\u0E08\u0E23\u0E34\u0E07\u0E41\u0E17\u0E49\u0E17\u0E31\u0E49\u0E07\u0E2B\u0E21\u0E14\u0E44\u0E14\u0E49 \u0E42\u0E14\u0E22\u0E44\u0E21\u0E48\u0E21\u0E35\u0E40\u0E07\u0E37\u0E48\u0E2D\u0E19\u0E44\u0E02\u0E2A\u0E48\u0E27\u0E19\u0E1A\u0E38\u0E04\u0E04\u0E25\u0E21\u0E32\u0E40\u0E01\u0E35\u0E48\u0E22\u0E27\u0E02\u0E49\u0E2D\u0E07";
+      uncertaintyPoint = "\u0E04\u0E27\u0E32\u0E21\u0E40\u0E02\u0E49\u0E32\u0E43\u0E08\u0E02\u0E2D\u0E07\u0E41\u0E15\u0E48\u0E25\u0E30\u0E04\u0E19\u0E2D\u0E32\u0E08\u0E41\u0E15\u0E01\u0E15\u0E48\u0E32\u0E07\u0E01\u0E31\u0E19\u0E15\u0E32\u0E21\u0E19\u0E34\u0E22\u0E32\u0E21\u0E2B\u0E23\u0E37\u0E2D\u0E21\u0E38\u0E21\u0E21\u0E2D\u0E07\u0E17\u0E35\u0E48\u0E21\u0E2D\u0E07\u0E40\u0E02\u0E49\u0E32\u0E21\u0E32";
+      nextVerification = "\u0E41\u0E19\u0E30\u0E19\u0E33\u0E43\u0E2B\u0E49\u0E25\u0E2D\u0E07\u0E41\u0E25\u0E01\u0E40\u0E1B\u0E25\u0E35\u0E48\u0E22\u0E19\u0E04\u0E27\u0E32\u0E21\u0E40\u0E2B\u0E47\u0E19\u0E01\u0E31\u0E1A\u0E04\u0E19\u0E2D\u0E37\u0E48\u0E19\u0E46 \u0E40\u0E1E\u0E34\u0E48\u0E21\u0E40\u0E15\u0E34\u0E21\u0E40\u0E1E\u0E37\u0E48\u0E2D\u0E0A\u0E48\u0E27\u0E22\u0E40\u0E15\u0E34\u0E21\u0E40\u0E15\u0E47\u0E21\u0E21\u0E38\u0E21\u0E21\u0E2D\u0E07\u0E01\u0E31\u0E19\u0E04\u0E23\u0E31\u0E1A";
+    } else if (/alignment|safety|ai|ethics/i.test(userInput)) {
+      reflectionCore = "\u0E01\u0E32\u0E23\u0E04\u0E27\u0E1A\u0E04\u0E38\u0E21\u0E04\u0E27\u0E32\u0E21\u0E1B\u0E25\u0E2D\u0E14\u0E20\u0E31\u0E22\u0E02\u0E2D\u0E07 AI \u0E15\u0E49\u0E2D\u0E07\u0E23\u0E31\u0E01\u0E29\u0E32\u0E2A\u0E21\u0E14\u0E38\u0E25\u0E23\u0E30\u0E2B\u0E27\u0E48\u0E32\u0E07\u0E01\u0E0E\u0E40\u0E01\u0E13\u0E11\u0E4C\u0E17\u0E35\u0E48\u0E0A\u0E31\u0E14\u0E40\u0E08\u0E19\u0E01\u0E31\u0E1A\u0E04\u0E27\u0E32\u0E21\u0E22\u0E37\u0E14\u0E2B\u0E22\u0E38\u0E48\u0E19\u0E43\u0E19\u0E01\u0E32\u0E23\u0E43\u0E0A\u0E49\u0E07\u0E32\u0E19\u0E08\u0E23\u0E34\u0E07\u0E04\u0E23\u0E31\u0E1A";
+      limitation = "\u0E01\u0E32\u0E23\u0E15\u0E31\u0E49\u0E07\u0E01\u0E0E\u0E40\u0E01\u0E13\u0E11\u0E4C\u0E17\u0E35\u0E48\u0E15\u0E36\u0E07\u0E40\u0E01\u0E34\u0E19\u0E44\u0E1B\u0E2D\u0E32\u0E08\u0E17\u0E33\u0E43\u0E2B\u0E49\u0E15\u0E31\u0E27\u0E23\u0E30\u0E1A\u0E1A\u0E02\u0E32\u0E14\u0E04\u0E27\u0E32\u0E21\u0E40\u0E1B\u0E47\u0E19\u0E18\u0E23\u0E23\u0E21\u0E0A\u0E32\u0E15\u0E34\u0E41\u0E25\u0E30\u0E02\u0E31\u0E14\u0E01\u0E31\u0E1A\u0E04\u0E27\u0E32\u0E21\u0E15\u0E49\u0E2D\u0E07\u0E01\u0E32\u0E23\u0E08\u0E23\u0E34\u0E07\u0E02\u0E2D\u0E07\u0E21\u0E19\u0E38\u0E29\u0E22\u0E4C";
+      uncertaintyPoint = "\u0E40\u0E23\u0E37\u0E48\u0E2D\u0E07\u0E08\u0E23\u0E34\u0E22\u0E18\u0E23\u0E23\u0E21\u0E41\u0E25\u0E30\u0E04\u0E27\u0E32\u0E21\u0E40\u0E2B\u0E21\u0E32\u0E30\u0E2A\u0E21\u0E44\u0E21\u0E48\u0E21\u0E35\u0E21\u0E32\u0E15\u0E23\u0E10\u0E32\u0E19\u0E41\u0E1A\u0E1A\u0E40\u0E14\u0E35\u0E22\u0E27\u0E17\u0E35\u0E48\u0E43\u0E0A\u0E49\u0E44\u0E14\u0E49\u0E01\u0E31\u0E1A\u0E17\u0E38\u0E01\u0E17\u0E35\u0E48 \u0E17\u0E38\u0E01\u0E2A\u0E16\u0E32\u0E19\u0E01\u0E32\u0E23\u0E13\u0E4C";
+      nextVerification = "\u0E04\u0E27\u0E23\u0E25\u0E2D\u0E07\u0E17\u0E14\u0E2A\u0E2D\u0E1A\u0E14\u0E39\u0E27\u0E48\u0E32\u0E23\u0E30\u0E1A\u0E1A\u0E08\u0E30\u0E15\u0E2D\u0E1A\u0E2A\u0E19\u0E2D\u0E07\u0E22\u0E31\u0E07\u0E44\u0E07\u0E43\u0E19\u0E2A\u0E16\u0E32\u0E19\u0E01\u0E32\u0E23\u0E13\u0E4C\u0E08\u0E33\u0E25\u0E2D\u0E07\u0E17\u0E35\u0E48\u0E17\u0E49\u0E32\u0E17\u0E32\u0E22\u0E2B\u0E25\u0E32\u0E22\u0E46 \u0E41\u0E1A\u0E1A\u0E14\u0E39\u0E04\u0E23\u0E31\u0E1A";
+    } else if (/verify|formal|logic|code|program/i.test(userInput)) {
+      reflectionCore = "\u0E01\u0E32\u0E23\u0E15\u0E23\u0E27\u0E08\u0E15\u0E23\u0E23\u0E01\u0E30\u0E23\u0E30\u0E1A\u0E1A\u0E41\u0E1A\u0E1A\u0E25\u0E30\u0E40\u0E2D\u0E35\u0E22\u0E14\u0E0A\u0E48\u0E27\u0E22\u0E43\u0E2B\u0E49\u0E40\u0E23\u0E32\u0E21\u0E31\u0E48\u0E19\u0E43\u0E08\u0E43\u0E19\u0E2B\u0E25\u0E31\u0E01\u0E01\u0E32\u0E23\u0E17\u0E33\u0E07\u0E32\u0E19\u0E40\u0E1A\u0E37\u0E49\u0E2D\u0E07\u0E15\u0E49\u0E19\u0E44\u0E14\u0E49\u0E14\u0E35\u0E21\u0E32\u0E01\u0E04\u0E23\u0E31\u0E1A";
+      limitation = "\u0E16\u0E36\u0E07\u0E42\u0E04\u0E49\u0E14\u0E2B\u0E23\u0E37\u0E2D\u0E15\u0E23\u0E23\u0E01\u0E30\u0E08\u0E30\u0E16\u0E39\u0E01\u0E15\u0E49\u0E2D\u0E07\u0E15\u0E32\u0E21\u0E17\u0E24\u0E29\u0E0E\u0E35 \u0E41\u0E15\u0E48\u0E2D\u0E32\u0E08\u0E21\u0E35\u0E1B\u0E31\u0E0D\u0E2B\u0E32\u0E2B\u0E23\u0E37\u0E2D\u0E1A\u0E31\u0E4A\u0E01\u0E41\u0E1D\u0E07\u0E43\u0E19\u0E2A\u0E20\u0E32\u0E1E\u0E41\u0E27\u0E14\u0E25\u0E49\u0E2D\u0E21\u0E08\u0E23\u0E34\u0E07\u0E44\u0E14\u0E49";
+      uncertaintyPoint = "\u0E22\u0E31\u0E07\u0E21\u0E35\u0E15\u0E31\u0E27\u0E41\u0E1B\u0E23\u0E2D\u0E37\u0E48\u0E19\u0E46 \u0E40\u0E0A\u0E48\u0E19 \u0E04\u0E27\u0E32\u0E21\u0E40\u0E02\u0E49\u0E32\u0E01\u0E31\u0E19\u0E44\u0E14\u0E49\u0E02\u0E2D\u0E07\u0E23\u0E30\u0E1A\u0E1A\u0E2D\u0E37\u0E48\u0E19 \u0E2B\u0E23\u0E37\u0E2D\u0E02\u0E49\u0E2D\u0E08\u0E33\u0E01\u0E31\u0E14\u0E02\u0E2D\u0E07\u0E23\u0E30\u0E1A\u0E1A\u0E1B\u0E0F\u0E34\u0E1A\u0E31\u0E15\u0E34\u0E01\u0E32\u0E23";
+      nextVerification = "\u0E04\u0E27\u0E23\u0E17\u0E14\u0E2A\u0E2D\u0E1A\u0E23\u0E31\u0E19\u0E23\u0E30\u0E1A\u0E1A\u0E43\u0E19\u0E2A\u0E20\u0E32\u0E27\u0E30\u0E41\u0E27\u0E14\u0E25\u0E49\u0E2D\u0E21\u0E08\u0E33\u0E25\u0E2D\u0E07\u0E17\u0E35\u0E48\u0E43\u0E01\u0E25\u0E49\u0E40\u0E04\u0E35\u0E22\u0E07\u0E01\u0E31\u0E1A\u0E02\u0E2D\u0E07\u0E08\u0E23\u0E34\u0E07\u0E21\u0E32\u0E01\u0E17\u0E35\u0E48\u0E2A\u0E38\u0E14\u0E04\u0E23\u0E31\u0E1A";
+    } else if (/decide|choose|เลือก|ตัดสินใจ/i.test(userInput)) {
+      reflectionCore = "\u0E01\u0E32\u0E23\u0E17\u0E1A\u0E17\u0E27\u0E19\u0E17\u0E32\u0E07\u0E40\u0E25\u0E37\u0E2D\u0E01\u0E0A\u0E48\u0E27\u0E22\u0E25\u0E14\u0E2D\u0E04\u0E15\u0E34 \u0E40\u0E1E\u0E37\u0E48\u0E2D\u0E44\u0E21\u0E48\u0E43\u0E2B\u0E49\u0E40\u0E23\u0E32\u0E14\u0E48\u0E27\u0E19\u0E2A\u0E23\u0E38\u0E1B\u0E2B\u0E23\u0E37\u0E2D\u0E21\u0E2D\u0E07\u0E02\u0E49\u0E32\u0E21\u0E17\u0E32\u0E07\u0E17\u0E35\u0E48\u0E14\u0E35\u0E01\u0E27\u0E48\u0E32\u0E04\u0E23\u0E31\u0E1A";
+      limitation = "\u0E01\u0E32\u0E23\u0E1B\u0E23\u0E30\u0E40\u0E21\u0E34\u0E19\u0E25\u0E48\u0E27\u0E07\u0E2B\u0E19\u0E49\u0E32\u0E2D\u0E32\u0E08\u0E08\u0E30\u0E21\u0E2D\u0E07\u0E44\u0E21\u0E48\u0E40\u0E2B\u0E47\u0E19\u0E1B\u0E31\u0E0D\u0E2B\u0E32\u0E40\u0E09\u0E1E\u0E32\u0E30\u0E2B\u0E19\u0E49\u0E32\u0E2B\u0E23\u0E37\u0E2D\u0E1C\u0E25\u0E01\u0E23\u0E30\u0E17\u0E1A\u0E17\u0E32\u0E07\u0E2D\u0E32\u0E23\u0E21\u0E13\u0E4C\u0E02\u0E2D\u0E07\u0E04\u0E19\u0E17\u0E33\u0E07\u0E32\u0E19\u0E08\u0E23\u0E34\u0E07";
+      uncertaintyPoint = "\u0E1B\u0E31\u0E08\u0E08\u0E31\u0E22\u0E17\u0E35\u0E48\u0E44\u0E21\u0E48\u0E41\u0E19\u0E48\u0E19\u0E2D\u0E19\u0E04\u0E37\u0E2D\u0E23\u0E30\u0E14\u0E31\u0E1A\u0E04\u0E27\u0E32\u0E21\u0E40\u0E2A\u0E35\u0E48\u0E22\u0E07\u0E17\u0E35\u0E48\u0E40\u0E23\u0E32\u0E22\u0E2D\u0E21\u0E23\u0E31\u0E1A\u0E44\u0E14\u0E49\u0E08\u0E23\u0E34\u0E07\u0E41\u0E25\u0E30\u0E04\u0E27\u0E32\u0E21\u0E1E\u0E23\u0E49\u0E2D\u0E21\u0E40\u0E23\u0E37\u0E48\u0E2D\u0E07\u0E07\u0E1A\u0E1B\u0E23\u0E30\u0E21\u0E32\u0E13";
+      nextVerification = "\u0E41\u0E19\u0E30\u0E19\u0E33\u0E43\u0E2B\u0E49\u0E40\u0E23\u0E34\u0E48\u0E21\u0E17\u0E14\u0E25\u0E2D\u0E07\u0E17\u0E33\u0E43\u0E19\u0E2A\u0E40\u0E01\u0E25\u0E40\u0E25\u0E47\u0E01\u0E46 \u0E14\u0E39\u0E01\u0E48\u0E2D\u0E19\u0E40\u0E1E\u0E37\u0E48\u0E2D\u0E40\u0E0A\u0E47\u0E04\u0E1C\u0E25\u0E15\u0E2D\u0E1A\u0E23\u0E31\u0E1A\u0E08\u0E23\u0E34\u0E07 \u0E01\u0E48\u0E2D\u0E19\u0E17\u0E35\u0E48\u0E08\u0E30\u0E15\u0E31\u0E14\u0E2A\u0E34\u0E19\u0E43\u0E08\u0E04\u0E23\u0E31\u0E49\u0E07\u0E43\u0E2B\u0E0D\u0E48\u0E04\u0E23\u0E31\u0E1A";
+    }
+    state.reflection = [
+      `\u0E41\u0E01\u0E48\u0E19\u0E2A\u0E30\u0E17\u0E49\u0E2D\u0E19\u0E04\u0E34\u0E14: ${reflectionCore}`,
+      `\u0E02\u0E49\u0E2D\u0E08\u0E33\u0E01\u0E31\u0E14\u0E01\u0E32\u0E23\u0E27\u0E34\u0E40\u0E04\u0E23\u0E32\u0E30\u0E2B\u0E4C: ${limitation}`,
+      `\u0E08\u0E38\u0E14\u0E2D\u0E48\u0E2D\u0E19\u0E41\u0E25\u0E30\u0E2A\u0E48\u0E27\u0E19\u0E17\u0E35\u0E48\u0E44\u0E21\u0E48\u0E41\u0E19\u0E48\u0E43\u0E08: ${uncertaintyPoint}`,
+      `\u0E41\u0E19\u0E27\u0E17\u0E32\u0E07\u0E22\u0E01\u0E23\u0E30\u0E14\u0E31\u0E1A\u0E40\u0E2B\u0E15\u0E38\u0E1C\u0E25: ${nextVerification}`
+    ];
+    state.record("reflection" /* REFLECTION */, { reflection: [...state.reflection] });
+  }
+  _learn(state) {
+    if (state.observations.length > 0) {
+      this.memory.remember({
+        content: `\u0E1B\u0E23\u0E30\u0E40\u0E14\u0E47\u0E19\u0E01\u0E32\u0E23\u0E1B\u0E23\u0E30\u0E40\u0E21\u0E34\u0E19\u0E02\u0E2D\u0E07\u0E1C\u0E39\u0E49\u0E43\u0E0A\u0E49: "${state.observations[0]}"`,
+        layer: "project" /* PROJECT */,
+        source: "user_input",
+        confidence: 1,
+        context: { purpose: state.purpose }
+      });
+      if (state.decision) {
+        this.memory.remember({
+          content: `\u0E1A\u0E17\u0E40\u0E23\u0E35\u0E22\u0E19\u0E08\u0E32\u0E01\u0E01\u0E32\u0E23\u0E1B\u0E23\u0E30\u0E40\u0E21\u0E34\u0E19\u0E40\u0E23\u0E37\u0E48\u0E2D\u0E07 "${state.observations[0]}": \u0E21\u0E35\u0E40\u0E1B\u0E49\u0E32\u0E2B\u0E21\u0E32\u0E22\u0E2A\u0E39\u0E07\u0E2A\u0E38\u0E14\u0E04\u0E37\u0E2D "${state.purpose}" \u0E41\u0E25\u0E30\u0E02\u0E49\u0E2D\u0E2A\u0E23\u0E38\u0E1B\u0E17\u0E32\u0E07\u0E40\u0E25\u0E37\u0E2D\u0E01\u0E04\u0E37\u0E2D "${state.decision}"`,
+          layer: "reflective" /* REFLECTIVE */,
+          source: "cognitive_dna_decision",
+          confidence: state.confidence,
+          context: { response: state.response ? state.response.substring(0, 150) : "" }
+        });
+      }
+      state.learning.push("\u0E1A\u0E31\u0E19\u0E17\u0E36\u0E01\u0E02\u0E49\u0E2D\u0E21\u0E39\u0E25\u0E2A\u0E30\u0E2A\u0E21\u0E25\u0E07\u0E2B\u0E19\u0E48\u0E27\u0E22\u0E04\u0E27\u0E32\u0E21\u0E08\u0E33\u0E23\u0E30\u0E22\u0E30\u0E22\u0E32\u0E27\u0E2A\u0E33\u0E40\u0E23\u0E47\u0E08 (Stored multi-layer persistent memories for cross-session cognitive continuity).");
+    }
+    state.record("learning" /* LEARNING */, { learning: [...state.learning] });
+  }
+  _validate_trace(state) {
+    const observed = state.trace.map((t) => t.stage);
+    const expected = COGNITIVE_DNA.map((stage) => stage);
+    const mismatch = observed.length !== expected.length || observed.some((val, i) => val !== expected[i]);
+    if (mismatch) {
+      throw new Error("Cognitive DNA stages must execute once and in specification order.");
+    }
+  }
+};
+
+// server.ts
+async function startServer() {
+  const app = (0, import_express.default)();
+  const PORT = 3e3;
+  const sharedMemory = new MemoryEngine();
+  app.use(import_express.default.json());
+  app.get("/api/health", (req, res) => {
+    res.json({ status: "ok", version: VERSION });
+  });
+  app.post("/api/analyze", async (req, res) => {
+    const { question, llm_provider, llm_model, tone, deepReasoning } = req.body;
+    if (!question || !question.trim()) {
+      res.status(400).json({ error: "Question cannot be empty." });
+      return;
+    }
+    try {
+      const orchestrator = new Orchestrator({
+        memory: sharedMemory,
+        provider: llm_provider || settings.llm.provider,
+        model: llm_model || settings.llm.model,
+        temperature: settings.llm.temperature,
+        tone: tone || "Formal Architect",
+        deepReasoning: !!deepReasoning
+      });
+      const state = await orchestrator.think(question);
+      res.json({
+        question: state.user_input,
+        response: state.response,
+        trace: state.trace,
+        notes: state.notes,
+        observations: state.observations,
+        understanding: state.understanding,
+        purpose: state.purpose,
+        decision: state.decision,
+        confidence: state.confidence,
+        critique: state.critique,
+        reflection: state.reflection,
+        learning: state.learning,
+        agency_checks: state.agency_checks,
+        reasoning_graph: state.reasoning_graph,
+        strategy_selection: state.strategy_selection,
+        memory_traces: state.memory_traces
+      });
+    } catch (error) {
+      console.error("Analysis failed:", error);
+      res.status(500).json({ error: error?.message || "An internal error occurred." });
+    }
+  });
+  app.get("/api/memory", (req, res) => {
+    res.json(sharedMemory.getAllItems());
+  });
+  app.post("/api/memory", (req, res) => {
+    const { content, layer, source } = req.body;
+    if (!content) {
+      res.status(400).json({ error: "Content is required." });
+      return;
+    }
+    sharedMemory.remember({
+      content,
+      layer: layer || "project",
+      source: source || "user_manual",
+      confidence: 1,
+      created_at: (/* @__PURE__ */ new Date()).toISOString()
+    });
+    res.json({ success: true, items: sharedMemory.getAllItems() });
+  });
+  app.delete("/api/memory", (req, res) => {
+    const { content } = req.body;
+    if (!content) {
+      res.status(400).json({ error: "Content is required to delete memory." });
+      return;
+    }
+    const success = sharedMemory.deleteItem(content);
+    res.json({ success, items: sharedMemory.getAllItems() });
+  });
+  app.post("/api/memory/clear", (req, res) => {
+    sharedMemory.clearMemory();
+    res.json({ success: true, items: [] });
+  });
+  if (process.env.NODE_ENV !== "production") {
+    const vite = await (0, import_vite.createServer)({
+      server: { middlewareMode: true },
+      appType: "spa"
+    });
+    app.use(vite.middlewares);
+    console.log("Vite development server middleware loaded.");
+  } else {
+    const distPath = import_path2.default.join(process.cwd(), "dist");
+    app.use(import_express.default.static(distPath));
+    app.get("*", (req, res) => {
+      res.sendFile(import_path2.default.join(distPath, "index.html"));
+    });
+    console.log("Production static files serving loaded.");
+  }
+  app.listen(PORT, "0.0.0.0", () => {
+    console.log(`Server running on http://0.0.0.0:${PORT}`);
+  });
+}
+startServer().catch((err) => {
+  console.error("Failed to start server:", err);
+  process.exit(1);
+});
+//# sourceMappingURL=server.cjs.map
