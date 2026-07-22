@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # PCA — Punn Cognitive Architecture
 
 > **Helping Local LLMs think before they answer.**
@@ -143,3 +144,6 @@ PCA is designed to make Local LLMs produce responses that are:
 > **LLMs generate language.**
 
 > **PCA structures reasoning.**
+=======
+# PUNN-PCA-Unified
+>>>>>>> f085f9aea23bbd0bed71b7f1f11f9ccc2cf8eb5e
