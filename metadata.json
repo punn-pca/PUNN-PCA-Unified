@@ -1,0 +1,8 @@
+{
+  "name": " Remix: punn-cognitive-architecture",
+  "description": "Imported from GitHub: punn-pca/punn-cognitive-architecture",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

@@ -1,0 +1,33 @@
+cff-version: 1.2.0
+
+title: "PUNN Cognitive Architecture (PCA)"
+
+message: "If you use this project in research, please cite it using the metadata below."
+
+type: software
+
+authors:
+  - family-names: "Punkulrachoti"
+    given-names: "Punn Parameth"
+
+repository-code: "https://github.com/punnpca-ai/punn-cognitive-architecture"
+
+abstract: >
+  PUNN Cognitive Architecture (PCA) is an open,
+  constitution-centered cognitive architecture for
+  trustworthy, human-centered intelligence.
+
+keywords:
+  - Cognitive Architecture
+  - Artificial Intelligence
+  - Human Agency
+  - AI Governance
+  - Multi-Agent Systems
+  - Cognitive Systems
+  - Explainable AI
+
+license: "TBD"
+
+version: "1.0-draft"
+
+date-released: 2026-01-01

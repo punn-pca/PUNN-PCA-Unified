@@ -1,0 +1,16 @@
+# PCA Cognitive DNA Configuration
+# This file controls the behavior of the prototype without changing code.
+
+llm:
+  provider: ollama
+  model: qwen3:4b
+  temperature: 0.7
+  max_tokens: 500
+
+memory:
+  vector_search: false
+  embedding_model: all-MiniLM-L6-v2
+
+governance:
+  firekeeper_mode: strict
+  human_agency_required: true

@@ -1,0 +1,249 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Kanit:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Kanit", "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+  
+  --text-xs: 0.925rem;    /* ~14.8px: readable Thai helper text */
+  --text-sm: 1.05rem;     /* ~16.8px: comfortable body text */
+  --text-base: 1.125rem; /* 18px: clear primary content */
+  --text-lg: 1.225rem;    /* scaled up from 18px (1.125rem) to ~19.6px */
+  --text-xl: 1.375rem;    /* scaled up from 20px (1.25rem) to ~22px */
+  --text-2xl: 1.625rem;
+  --text-3xl: 2.0rem;
+  --text-4xl: 2.5rem;
+}
+
+@layer base {
+  body {
+    background-color: #131314;
+    color: #e3e3e3;
+    font-family: var(--font-sans);
+    margin: 0;
+    padding: 0;
+    overflow: hidden;
+  }
+}
+
+/* Custom transitions and scrollbars */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #3c4043;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #4f5357;
+}
+
+/* Shimmer animation for loading states */
+@keyframes shimmer {
+  0% {
+    background-position: -200% 0;
+  }
+  100% {
+    background-position: 200% 0;
+  }
+}
+
+.shimmer {
+  background: linear-gradient(90deg, #1e1f20 25%, #2a2b2d 50%, #1e1f20 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.5s infinite linear;
+}
+
+html:not(.dark) .shimmer, body:not(.dark) .shimmer {
+  background: linear-gradient(90deg, #f0f3f6 25%, #e1e7ee 50%, #f0f3f6 75%);
+  background-size: 200% 100%;
+}
+
+/* Luxury active glow */
+.premium-glow-border {
+  position: relative;
+}
+
+.premium-glow-border::after {
+  content: '';
+  position: absolute;
+  inset: -1px;
+  background: linear-gradient(95deg, #3b82f6, #8b5cf6, #ec4899);
+  border-radius: inherit;
+  z-index: -1;
+  opacity: 0.15;
+  transition: opacity 0.3s ease;
+}
+
+.premium-glow-border:hover::after {
+  opacity: 0.3;
+}
+
+/* Glassmorphism containers */
+.glass-panel-dark {
+  background: rgba(30, 31, 32, 0.7);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+
+.glass-panel-light {
+  background: rgba(255, 255, 255, 0.8);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+
+/* Typing indicator animation */
+@keyframes bounce {
+  0%, 100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-4px);
+  }
+}
+
+.bounce-dot {
+  animation: bounce 1s infinite ease-in-out;
+}
+
+.bounce-dot:nth-child(2) {
+  animation-delay: 0.2s;
+}
+
+.bounce-dot:nth-child(3) {
+  animation-delay: 0.4s;
+}
+
+/* Glow effect matching Gemini's branding */
+.gemini-glow {
+  background: linear-gradient(135deg, #1ba1e2 0%, #a200ff 50%, #ff007f 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.gemini-gradient-bg {
+  background: linear-gradient(135deg, #1a73e8, #8ab4f8);
+}
+
+/* Firekeeper Theme Extras */
+@keyframes fireFlicker {
+  0%, 100% {
+    filter: drop-shadow(0 0 12px rgba(249, 115, 22, 0.15)) drop-shadow(0 0 24px rgba(239, 68, 68, 0.05));
+  }
+  50% {
+    filter: drop-shadow(0 0 18px rgba(249, 115, 22, 0.28)) drop-shadow(0 0 35px rgba(239, 68, 68, 0.15));
+  }
+}
+
+.fire-flicker-glow {
+  animation: fireFlicker 3s infinite ease-in-out;
+}
+
+@keyframes hearthPulse {
+  0%, 100% {
+    background-position: 0% 50%;
+  }
+  50% {
+    background-position: 100% 50%;
+  }
+}
+
+.hearth-gradient {
+  background: linear-gradient(-45deg, #1e1f20, #221a16, #2d1e15, #1e1f20);
+  background-size: 300% 300%;
+  animation: hearthPulse 12s infinite ease-in-out;
+}
+
+.hearth-gradient-light {
+  background: linear-gradient(-45deg, #fbfbfb, #fdf6f0, #fcf0e5, #fbfbfb);
+  background-size: 300% 300%;
+  animation: hearthPulse 12s infinite ease-in-out;
+}
+
+.firekeeper-border {
+  position: relative;
+}
+
+.firekeeper-border::after {
+  content: '';
+  position: absolute;
+  inset: -1px;
+  background: linear-gradient(135deg, #f97316, #ef4444, #ec4899);
+  border-radius: inherit;
+  z-index: -1;
+  opacity: 0.12;
+  transition: opacity 0.4s ease, filter 0.4s ease;
+}
+
+.firekeeper-border:hover::after {
+  opacity: 0.28;
+  filter: blur(1px);
+}
+
+/* Custom chat bubble design matching hearth theme */
+.chat-bubble-hearth {
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.chat-bubble-hearth:hover {
+  border-color: rgba(249, 115, 22, 0.35) !important;
+  box-shadow: 0 0 20px rgba(249, 115, 22, 0.18), 0 0 5px rgba(239, 68, 68, 0.08) !important;
+  transform: translateY(-1px);
+}
+
+/* Text-to-Speech Equalizer animations */
+@keyframes eqHeight1 {
+  0%, 100% { height: 3px; }
+  50% { height: 10px; }
+}
+@keyframes eqHeight2 {
+  0%, 100% { height: 5px; }
+  50% { height: 12px; }
+}
+@keyframes eqHeight3 {
+  0%, 100% { height: 4px; }
+  50% { height: 8px; }
+}
+
+.animate-eqBar1 {
+  animation: eqHeight1 0.6s infinite ease-in-out;
+}
+.animate-eqBar2 {
+  animation: eqHeight2 0.75s infinite ease-in-out;
+}
+.animate-eqBar3 {
+  animation: eqHeight3 0.5s infinite ease-in-out;
+}
+
+
+/* PUNN unified purple theme: remaps legacy blue/orange utilities without changing behavior. */
+@theme {
+  --color-blue-50: #faf5ff; --color-blue-100: #f3e8ff; --color-blue-200: #e9d5ff; --color-blue-300: #d8b4fe; --color-blue-400: #c084fc; --color-blue-500: #a855f7; --color-blue-600: #9333ea; --color-blue-700: #7e22ce; --color-blue-800: #6b21a8; --color-blue-900: #581c87;
+  --color-orange-50: #faf5ff; --color-orange-100: #f3e8ff; --color-orange-200: #e9d5ff; --color-orange-300: #d8b4fe; --color-orange-400: #c084fc; --color-orange-500: #a855f7; --color-orange-600: #9333ea; --color-orange-700: #7e22ce; --color-orange-800: #6b21a8; --color-orange-900: #581c87;
+}
+.premium-glow-border::after, .firekeeper-border::after { background: linear-gradient(95deg, #7e22ce, #a855f7, #e879f9); }
+.gemini-glow { background: linear-gradient(135deg, #7e22ce 0%, #a855f7 50%, #e879f9 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+.gemini-gradient-bg { background: linear-gradient(135deg, #7e22ce, #c084fc); }
+.hearth-gradient { background: linear-gradient(-45deg, #131314, #21152f, #2d1740, #131314); }
+.hearth-gradient-light { background: linear-gradient(-45deg, #fbfbfb, #faf5ff, #f3e8ff, #fbfbfb); }
+.chat-bubble-hearth:hover { border-color: rgba(168, 85, 247, 0.40) !important; box-shadow: 0 0 20px rgba(168, 85, 247, 0.20), 0 0 5px rgba(232, 121, 249, 0.10) !important; }
+
+/* Dark-mode readability: subdued text remains legible on charcoal surfaces. */
+.dark .text-gray-500,
+.dark .dark\:text-gray-500 { color: #bfc5d0 !important; }
+.dark .text-gray-400,
+.dark .dark\:text-gray-400 { color: #d5d9e2 !important; }
+.dark .text-gray-450,
+.dark .dark\:text-gray-450 { color: #c9ced8 !important; }
+.dark .text-gray-300,
+.dark .dark\:text-gray-300 { color: #e3e6ec !important; }
+
+/* Long Thai labels need slightly more breathing room than Latin-only text. */
+button, input, textarea { line-height: 1.45; }
